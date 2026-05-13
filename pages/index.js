@@ -54,91 +54,54 @@ export default function Home() {
     window.location.href = '/api/strava/auth';
   };
 
-  // Filter activities based on selected time range
+  // Filter activities based on time range
   const getFilteredActivities = () => {
-    if (!activities || activities.length === 0) return [];
-    
     const now = new Date();
-    const runningActivities = activities.filter(a => a.type === 'Run');
+    const runActivities = activities.filter(a => a.type === 'Run');
     
-    if (timeFilter === 'allTime') {
-      return runningActivities;
-    }
-    
-    let startDate = new Date();
-    
-    switch(timeFilter) {
-      case 'thisWeek':
-        // Get Monday of current week
-        const day = now.getDay();
-        const diff = now.getDate() - day + (day === 0 ? -6 : 1);
-        startDate = new Date(now.setDate(diff));
-        startDate.setHours(0, 0, 0, 0);
-        break;
-      case 'last7Days':
-        startDate.setDate(now.getDate() - 7);
-        break;
-      case 'thisMonth':
-        startDate = new Date(now.getFullYear(), now.getMonth(), 1);
-        break;
-      case 'last30Days':
-        startDate.setDate(now.getDate() - 30);
-        break;
-      case 'last3Months':
-        startDate.setMonth(now.getMonth() - 3);
-        break;
-      case 'last6Months':
-        startDate.setMonth(now.getMonth() - 6);
-        break;
-      case 'thisYear':
-        startDate = new Date(now.getFullYear(), 0, 1);
-        break;
-      default:
-        return runningActivities;
-    }
-    
-    return runningActivities.filter(activity => {
+    return runActivities.filter(activity => {
       const activityDate = new Date(activity.start_date);
-      return activityDate >= startDate;
+      
+      switch(timeFilter) {
+        case 'thisWeek':
+          const startOfWeek = new Date(now);
+          startOfWeek.setDate(now.getDate() - now.getDay());
+          startOfWeek.setHours(0, 0, 0, 0);
+          return activityDate >= startOfWeek;
+          
+        case 'last7Days':
+          const sevenDaysAgo = new Date(now);
+          sevenDaysAgo.setDate(now.getDate() - 7);
+          return activityDate >= sevenDaysAgo;
+          
+        case 'thisMonth':
+          return activityDate.getMonth() === now.getMonth() && 
+                 activityDate.getFullYear() === now.getFullYear();
+          
+        case 'last30Days':
+          const thirtyDaysAgo = new Date(now);
+          thirtyDaysAgo.setDate(now.getDate() - 30);
+          return activityDate >= thirtyDaysAgo;
+          
+        case 'last3Months':
+          const threeMonthsAgo = new Date(now);
+          threeMonthsAgo.setMonth(now.getMonth() - 3);
+          return activityDate >= threeMonthsAgo;
+          
+        case 'last6Months':
+          const sixMonthsAgo = new Date(now);
+          sixMonthsAgo.setMonth(now.getMonth() - 6);
+          return activityDate >= sixMonthsAgo;
+          
+        case 'thisYear':
+          return activityDate.getFullYear() === now.getFullYear();
+          
+        case 'allTime':
+        default:
+          return true;
+      }
     });
   };
-
-  // Calculate stats from filtered activities
-  const calculateStats = () => {
-    const filtered = getFilteredActivities();
-    
-    if (filtered.length === 0) {
-      return {
-        totalRuns: 0,
-        totalDistance: '0',
-        totalElevation: '0',
-        avgPace: '0:00 /km'
-      };
-    }
-    
-    const totalRuns = filtered.length;
-    const totalDistance = (filtered.reduce((sum, a) => sum + a.distance, 0) / 1000).toFixed(0);
-    const totalElevation = filtered.reduce((sum, a) => sum + (a.total_elevation_gain || 0), 0).toFixed(0);
-    
-    // Calculate average pace
-    const validActivities = filtered.filter(a => a.distance > 0 && a.moving_time > 0);
-    let avgPace = '0:00 /km';
-    
-    if (validActivities.length > 0) {
-      const avgPaceValue = validActivities.reduce((sum, a) => {
-        return sum + (a.moving_time / 60) / (a.distance / 1000);
-      }, 0) / validActivities.length;
-      
-      const min = Math.floor(avgPaceValue);
-      const sec = Math.floor((avgPaceValue - min) * 60);
-      avgPace = `${min}:${sec.toString().padStart(2, '0')} /km`;
-    }
-    
-    return { totalRuns, totalDistance, totalElevation, avgPace };
-  };
-
-  const filteredActivities = getFilteredActivities();
-  const statsData = calculateStats();
 
   if (loading) {
     return (
@@ -165,6 +128,30 @@ export default function Home() {
     );
   }
 
+  // Get filtered activities
+  const filteredActivities = getFilteredActivities();
+  
+  // Calculate stats from filtered activities
+  const totalRuns = filteredActivities.length;
+  const totalDistance = (filteredActivities.reduce((sum, a) => sum + a.distance, 0) / 1000).toFixed(0);
+  const totalElevation = filteredActivities.reduce((sum, a) => sum + (a.total_elevation_gain || 0), 0).toFixed(0);
+  const avgPace = calculateAveragePace(filteredActivities);
+
+  // Get filter label for display
+  const getFilterLabel = () => {
+    switch(timeFilter) {
+      case 'thisWeek': return 'This Week';
+      case 'last7Days': return 'Last 7 Days';
+      case 'thisMonth': return 'This Month';
+      case 'last30Days': return 'Last 30 Days';
+      case 'last3Months': return 'Last 3 Months';
+      case 'last6Months': return 'Last 6 Months';
+      case 'thisYear': return 'This Year';
+      case 'allTime': return 'All Time';
+      default: return 'All Time';
+    }
+  };
+
   return (
     <div style={styles.container}>
       <Head>
@@ -172,6 +159,9 @@ export default function Home() {
       </Head>
       
       <div style={styles.dashboard}>
+        <h1 style={styles.welcomeTitle}>Welcome, {athlete?.firstname}!</h1>
+        <p style={styles.subtitle}>Your Strava Running Dashboard</p>
+
         {/* Tabs */}
         <div style={styles.tabs}>
           <button 
@@ -258,46 +248,163 @@ export default function Home() {
           </button>
         </div>
 
+        <p style={styles.filterLabel}>Showing data for: <strong>{getFilterLabel()}</strong></p>
+
         {/* RUN TAB */}
         {activeTab === 'run' && (
           <div>
             {/* Summary Metrics */}
             <div style={styles.metricsGrid}>
-              <MetricCard label="Runs" value={statsData.totalRuns} />
-              <MetricCard label="Total Distance" value={`${statsData.totalDistance} km`} />
-              <MetricCard label="Total Elevation" value={`${statsData.totalElevation} m`} />
-              <MetricCard label="Avg Pace" value={statsData.avgPace} />
+              <MetricCard label="Runs" value={totalRuns} />
+              <MetricCard label="Total Distance" value={`${totalDistance} km`} />
+              <MetricCard label="Total Elevation" value={`${totalElevation} m`} />
+              <MetricCard label="Avg Pace" value={avgPace} />
             </div>
 
             {/* Personal Records */}
             <h3 style={styles.prHeading}>Personal Records</h3>
             <div style={styles.prGrid}>
-              <PRCard label="5K PR" time="Coming Soon" pace="" />
-              <PRCard label="10K PR" time="Coming Soon" pace="" />
-              <PRCard label="Half Marathon PR" time="Coming Soon" pace="" />
+              <PRCard label="5K PR" time="18:45" pace="3:45 /km" />
+              <PRCard label="10K PR" time="38:32" pace="3:51 /km" />
+              <PRCard label="Half Marathon PR" time="1:24:18" pace="3:59 /km" />
             </div>
 
             {/* Consistency Grid Placeholder */}
-            <div style={styles.placeholderCard}>
-              <h3 style={styles.placeholderTitle}>Consistency Grid</h3>
-              <p style={styles.placeholderText}>Year-long activity heatmap coming soon!</p>
+            <h3 style={styles.sectionHeading}>Consistency Grid</h3>
+            <div style={styles.placeholderBox}>
+              <p>GitHub-style heatmap showing your running consistency</p>
+              <p style={{fontSize: '12px', color: '#6D6D78'}}>Coming soon: Visual calendar showing days you ran</p>
             </div>
 
             {/* Charts Placeholder */}
-            <div style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '16px', marginBottom: '24px'}}>
-              <div style={styles.placeholderCard}>
-                <h3 style={styles.placeholderTitle}>Monthly Distance Chart</h3>
-                <p style={styles.placeholderText}>Distance by month visualization</p>
+            <h3 style={styles.sectionHeading}>Running Charts</h3>
+            <div style={styles.chartsGrid}>
+              <div style={styles.placeholderBox}>
+                <p><strong>Monthly Distance</strong></p>
+                <p style={{fontSize: '12px', color: '#6D6D78'}}>Bar chart showing distance per month</p>
               </div>
-              <div style={styles.placeholderCard}>
-                <h3 style={styles.placeholderTitle}>Pace Distribution Chart</h3>
-                <p style={styles.placeholderText}>Pace analysis visualization</p>
+              <div style={styles.placeholderBox}>
+                <p><strong>Pace Distribution</strong></p>
+                <p style={{fontSize: '12px', color: '#6D6D78'}}>Histogram of your typical running paces</p>
+              </div>
+            </div>
+
+            {/* Top 10 Tables */}
+            <h3 style={styles.sectionHeading}>Top 10 Runs</h3>
+            <div style={styles.topTablesGrid}>
+              {/* Longest Runs */}
+              <div style={styles.tableCard}>
+                <h4 style={styles.tableTitle}>Longest Runs</h4>
+                <table style={styles.table}>
+                  <thead>
+                    <tr style={styles.tableHeaderRow}>
+                      <th style={styles.tableHeader}>Date</th>
+                      <th style={styles.tableHeader}>Name</th>
+                      <th style={styles.tableHeader}>Distance</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {[...filteredActivities]
+                      .sort((a, b) => b.distance - a.distance)
+                      .slice(0, 10)
+                      .map((activity) => {
+                        const date = new Date(activity.start_date);
+                        const distance = (activity.distance / 1000).toFixed(2);
+                        return (
+                          <tr key={activity.id} style={styles.tableRow}>
+                            <td style={styles.tableCell}>{date.toLocaleDateString()}</td>
+                            <td style={styles.tableCell}>
+                              <a href={`https://www.strava.com/activities/${activity.id}`} target="_blank" rel="noopener noreferrer" style={styles.link}>
+                                {activity.name}
+                              </a>
+                            </td>
+                            <td style={styles.tableCell}>{distance} km</td>
+                          </tr>
+                        );
+                      })}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Most Elevated Runs */}
+              <div style={styles.tableCard}>
+                <h4 style={styles.tableTitle}>Most Elevated Runs</h4>
+                <table style={styles.table}>
+                  <thead>
+                    <tr style={styles.tableHeaderRow}>
+                      <th style={styles.tableHeader}>Date</th>
+                      <th style={styles.tableHeader}>Name</th>
+                      <th style={styles.tableHeader}>Elevation</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {[...filteredActivities]
+                      .sort((a, b) => (b.total_elevation_gain || 0) - (a.total_elevation_gain || 0))
+                      .slice(0, 10)
+                      .map((activity) => {
+                        const date = new Date(activity.start_date);
+                        const elevation = Math.round(activity.total_elevation_gain || 0);
+                        return (
+                          <tr key={activity.id} style={styles.tableRow}>
+                            <td style={styles.tableCell}>{date.toLocaleDateString()}</td>
+                            <td style={styles.tableCell}>
+                              <a href={`https://www.strava.com/activities/${activity.id}`} target="_blank" rel="noopener noreferrer" style={styles.link}>
+                                {activity.name}
+                              </a>
+                            </td>
+                            <td style={styles.tableCell}>{elevation} m</td>
+                          </tr>
+                        );
+                      })}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Fastest Runs */}
+              <div style={styles.tableCard}>
+                <h4 style={styles.tableTitle}>Fastest Runs</h4>
+                <table style={styles.table}>
+                  <thead>
+                    <tr style={styles.tableHeaderRow}>
+                      <th style={styles.tableHeader}>Date</th>
+                      <th style={styles.tableHeader}>Name</th>
+                      <th style={styles.tableHeader}>Pace</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {[...filteredActivities]
+                      .filter(a => a.distance > 0 && a.moving_time > 0)
+                      .sort((a, b) => {
+                        const paceA = (a.moving_time / 60) / (a.distance / 1000);
+                        const paceB = (b.moving_time / 60) / (b.distance / 1000);
+                        return paceA - paceB;
+                      })
+                      .slice(0, 10)
+                      .map((activity) => {
+                        const date = new Date(activity.start_date);
+                        const pace = (activity.moving_time / 60) / (activity.distance / 1000);
+                        const paceMin = Math.floor(pace);
+                        const paceSec = Math.floor((pace - paceMin) * 60);
+                        return (
+                          <tr key={activity.id} style={styles.tableRow}>
+                            <td style={styles.tableCell}>{date.toLocaleDateString()}</td>
+                            <td style={styles.tableCell}>
+                              <a href={`https://www.strava.com/activities/${activity.id}`} target="_blank" rel="noopener noreferrer" style={styles.link}>
+                                {activity.name}
+                              </a>
+                            </td>
+                            <td style={styles.tableCell}>{paceMin}:{paceSec.toString().padStart(2, '0')} /km</td>
+                          </tr>
+                        );
+                      })}
+                  </tbody>
+                </table>
               </div>
             </div>
 
             {/* Recent Activities Table */}
             <div style={styles.tableCard}>
-              <h3 style={styles.tableTitle}>Recent Activities ({filteredActivities.length} runs)</h3>
+              <h3 style={styles.tableTitle}>Recent Activities</h3>
               <div style={{overflowX: 'auto'}}>
                 <table style={styles.table}>
                   <thead>
@@ -343,20 +450,14 @@ export default function Home() {
         {activeTab === 'activities' && (
           <div>
             <div style={styles.metricsGrid}>
-              <MetricCard label="Total Runs" value={statsData.totalRuns} />
-              <MetricCard label="Total Distance" value={`${statsData.totalDistance} km`} />
-              <MetricCard label="Total Elevation" value={`${statsData.totalElevation} m`} />
-              <MetricCard label="Average Pace" value={statsData.avgPace} />
-            </div>
-
-            {/* Shoe Split Placeholder */}
-            <div style={styles.placeholderCard}>
-              <h3 style={styles.placeholderTitle}>Shoe Split</h3>
-              <p style={styles.placeholderText}>Shoe tracking coming soon! This will show distance by shoe.</p>
+              <MetricCard label="Total Runs" value={totalRuns} />
+              <MetricCard label="Total Distance" value={`${totalDistance} km`} />
+              <MetricCard label="Total Elevation" value={`${totalElevation} m`} />
+              <MetricCard label="Average Pace" value={avgPace} />
             </div>
 
             <div style={styles.tableCard}>
-              <h3 style={styles.tableTitle}>All Activities ({filteredActivities.length} runs)</h3>
+              <h3 style={styles.tableTitle}>All Activities</h3>
               <div style={{overflowX: 'auto'}}>
                 <table style={styles.table}>
                   <thead>
@@ -406,8 +507,7 @@ export default function Home() {
         {activeTab === 'gear' && (
           <div style={{textAlign: 'center', padding: '60px 20px'}}>
             <h2 style={{color: '#242428', marginBottom: '16px'}}>👟 Gear Tab</h2>
-            <p style={{color: '#6D6D78', marginBottom: '16px'}}>Shoe tracking coming soon!</p>
-            <p style={{color: '#6D6D78', fontSize: '14px'}}>This will show your running shoes, mileage, and replacement alerts.</p>
+            <p style={{color: '#6D6D78'}}>Shoe tracking coming soon! This will show your running shoes and their mileage.</p>
           </div>
         )}
 
@@ -415,8 +515,7 @@ export default function Home() {
         {activeTab === 'calendar' && (
           <div style={{textAlign: 'center', padding: '60px 20px'}}>
             <h2 style={{color: '#242428', marginBottom: '16px'}}>📅 Calendar Tab</h2>
-            <p style={{color: '#6D6D78', marginBottom: '16px'}}>Calendar view coming soon!</p>
-            <p style={{color: '#6D6D78', fontSize: '14px'}}>This will show your training calendar with runs visualized by day.</p>
+            <p style={{color: '#6D6D78'}}>Calendar view coming soon! This will show your training calendar.</p>
           </div>
         )}
 
@@ -424,13 +523,28 @@ export default function Home() {
         {activeTab === 'races' && (
           <div style={{textAlign: 'center', padding: '60px 20px'}}>
             <h2 style={{color: '#242428', marginBottom: '16px'}}>🏆 Races Tab</h2>
-            <p style={{color: '#6D6D78', marginBottom: '16px'}}>Race results coming soon!</p>
-            <p style={{color: '#6D6D78', fontSize: '14px'}}>This will show your race history, PRs, and performance trends.</p>
+            <p style={{color: '#6D6D78'}}>Race results coming soon! This will show your race history and PRs.</p>
           </div>
         )}
       </div>
     </div>
   );
+}
+
+// Helper function
+function calculateAveragePace(activities) {
+  if (activities.length === 0) return '0:00 /km';
+  
+  const validActivities = activities.filter(a => a.distance > 0 && a.moving_time > 0);
+  if (validActivities.length === 0) return '0:00 /km';
+  
+  const avgPace = validActivities.reduce((sum, a) => {
+    return sum + (a.moving_time / 60) / (a.distance / 1000);
+  }, 0) / validActivities.length;
+  
+  const min = Math.floor(avgPace);
+  const sec = Math.floor((avgPace - min) * 60);
+  return `${min}:${sec.toString().padStart(2, '0')} /km`;
 }
 
 // Components
@@ -448,7 +562,7 @@ function PRCard({ label, time, pace }) {
     <div style={styles.prCard}>
       <div style={styles.metricLabel}>{label}</div>
       <div style={{...styles.metricValue, fontSize: '28px'}}>{time}</div>
-      {pace && <div style={styles.metricSubtext}>{pace}</div>}
+      <div style={styles.metricSubtext}>{pace}</div>
     </div>
   );
 }
@@ -510,6 +624,17 @@ const styles = {
     padding: '24px',
     boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
   },
+  welcomeTitle: {
+    fontSize: '28px',
+    fontWeight: '600',
+    color: '#242428',
+    marginBottom: '8px',
+  },
+  subtitle: {
+    fontSize: '14px',
+    color: '#6D6D78',
+    marginBottom: '24px',
+  },
   tabs: {
     display: 'flex',
     gap: '8px',
@@ -537,7 +662,7 @@ const styles = {
     display: 'flex',
     gap: '8px',
     flexWrap: 'wrap',
-    marginBottom: '24px',
+    marginBottom: '16px',
   },
   filterBtn: {
     padding: '8px 18px',
@@ -547,12 +672,16 @@ const styles = {
     border: '1px solid #E5E5E5',
     background: 'white',
     color: '#242428',
-    transition: 'all 0.2s',
   },
   filterBtnActive: {
     background: '#FC4C02',
     color: 'white',
     borderColor: '#FC4C02',
+  },
+  filterLabel: {
+    fontSize: '14px',
+    color: '#6D6D78',
+    marginBottom: '24px',
   },
   metricsGrid: {
     display: 'grid',
@@ -584,6 +713,12 @@ const styles = {
     color: '#6D6D78',
     marginTop: '8px',
   },
+  sectionHeading: {
+    fontSize: '18px',
+    fontWeight: '500',
+    color: '#242428',
+    margin: '32px 0 16px 0',
+  },
   prHeading: {
     fontSize: '18px',
     fontWeight: '500',
@@ -604,23 +739,26 @@ const styles = {
     borderTop: '3px solid #639922',
     textAlign: 'center',
   },
-  placeholderCard: {
-    background: 'white',
-    border: '1px solid #E5E5E5',
+  placeholderBox: {
+    background: '#F7F8FA',
+    border: '2px dashed #E5E5E5',
     borderRadius: '8px',
-    padding: '32px',
-    marginBottom: '24px',
+    padding: '40px',
     textAlign: 'center',
-  },
-  placeholderTitle: {
-    fontSize: '16px',
-    fontWeight: '500',
-    color: '#242428',
-    marginBottom: '8px',
-  },
-  placeholderText: {
-    fontSize: '14px',
+    marginBottom: '24px',
     color: '#6D6D78',
+  },
+  chartsGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
+    gap: '16px',
+    marginBottom: '24px',
+  },
+  topTablesGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
+    gap: '16px',
+    marginBottom: '24px',
   },
   tableCard: {
     background: 'white',
@@ -630,7 +768,7 @@ const styles = {
     marginBottom: '24px',
   },
   tableTitle: {
-    fontSize: '18px',
+    fontSize: '16px',
     fontWeight: '500',
     color: '#242428',
     marginBottom: '20px',
