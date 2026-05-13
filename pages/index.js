@@ -9,6 +9,7 @@ export default function Home() {
   const [athlete, setAthlete] = useState(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('run');
+  const [timeFilter, setTimeFilter] = useState('thisWeek');
 
   useEffect(() => {
     checkAuth();
@@ -53,6 +54,92 @@ export default function Home() {
     window.location.href = '/api/strava/auth';
   };
 
+  // Filter activities based on selected time range
+  const getFilteredActivities = () => {
+    if (!activities || activities.length === 0) return [];
+    
+    const now = new Date();
+    const runningActivities = activities.filter(a => a.type === 'Run');
+    
+    if (timeFilter === 'allTime') {
+      return runningActivities;
+    }
+    
+    let startDate = new Date();
+    
+    switch(timeFilter) {
+      case 'thisWeek':
+        // Get Monday of current week
+        const day = now.getDay();
+        const diff = now.getDate() - day + (day === 0 ? -6 : 1);
+        startDate = new Date(now.setDate(diff));
+        startDate.setHours(0, 0, 0, 0);
+        break;
+      case 'last7Days':
+        startDate.setDate(now.getDate() - 7);
+        break;
+      case 'thisMonth':
+        startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+        break;
+      case 'last30Days':
+        startDate.setDate(now.getDate() - 30);
+        break;
+      case 'last3Months':
+        startDate.setMonth(now.getMonth() - 3);
+        break;
+      case 'last6Months':
+        startDate.setMonth(now.getMonth() - 6);
+        break;
+      case 'thisYear':
+        startDate = new Date(now.getFullYear(), 0, 1);
+        break;
+      default:
+        return runningActivities;
+    }
+    
+    return runningActivities.filter(activity => {
+      const activityDate = new Date(activity.start_date);
+      return activityDate >= startDate;
+    });
+  };
+
+  // Calculate stats from filtered activities
+  const calculateStats = () => {
+    const filtered = getFilteredActivities();
+    
+    if (filtered.length === 0) {
+      return {
+        totalRuns: 0,
+        totalDistance: '0',
+        totalElevation: '0',
+        avgPace: '0:00 /km'
+      };
+    }
+    
+    const totalRuns = filtered.length;
+    const totalDistance = (filtered.reduce((sum, a) => sum + a.distance, 0) / 1000).toFixed(0);
+    const totalElevation = filtered.reduce((sum, a) => sum + (a.total_elevation_gain || 0), 0).toFixed(0);
+    
+    // Calculate average pace
+    const validActivities = filtered.filter(a => a.distance > 0 && a.moving_time > 0);
+    let avgPace = '0:00 /km';
+    
+    if (validActivities.length > 0) {
+      const avgPaceValue = validActivities.reduce((sum, a) => {
+        return sum + (a.moving_time / 60) / (a.distance / 1000);
+      }, 0) / validActivities.length;
+      
+      const min = Math.floor(avgPaceValue);
+      const sec = Math.floor((avgPaceValue - min) * 60);
+      avgPace = `${min}:${sec.toString().padStart(2, '0')} /km`;
+    }
+    
+    return { totalRuns, totalDistance, totalElevation, avgPace };
+  };
+
+  const filteredActivities = getFilteredActivities();
+  const statsData = calculateStats();
+
   if (loading) {
     return (
       <div style={styles.loadingContainer}>
@@ -77,13 +164,6 @@ export default function Home() {
       </div>
     );
   }
-
-  // Calculate running-only stats
-  const runningActivities = activities.filter(a => a.type === 'Run');
-  const totalRuns = stats?.all_run_totals?.count || 0;
-  const totalDistance = ((stats?.all_run_totals?.distance || 0) / 1000).toFixed(0);
-  const totalElevation = (stats?.all_run_totals?.elevation_gain || 0).toFixed(0);
-  const avgPace = calculateAveragePace(runningActivities);
 
   return (
     <div style={styles.container}>
@@ -128,14 +208,54 @@ export default function Home() {
 
         {/* Filter Buttons */}
         <div style={styles.filters}>
-          <button style={styles.filterBtn}>This Week</button>
-          <button style={styles.filterBtn}>Last 7 Days</button>
-          <button style={styles.filterBtn}>This Month</button>
-          <button style={{...styles.filterBtn, ...styles.filterBtnActive}}>Last 30 Days</button>
-          <button style={styles.filterBtn}>Last 3 Months</button>
-          <button style={styles.filterBtn}>Last 6 Months</button>
-          <button style={styles.filterBtn}>This Year</button>
-          <button style={styles.filterBtn}>All Time</button>
+          <button 
+            style={timeFilter === 'thisWeek' ? {...styles.filterBtn, ...styles.filterBtnActive} : styles.filterBtn}
+            onClick={() => setTimeFilter('thisWeek')}
+          >
+            This Week
+          </button>
+          <button 
+            style={timeFilter === 'last7Days' ? {...styles.filterBtn, ...styles.filterBtnActive} : styles.filterBtn}
+            onClick={() => setTimeFilter('last7Days')}
+          >
+            Last 7 Days
+          </button>
+          <button 
+            style={timeFilter === 'thisMonth' ? {...styles.filterBtn, ...styles.filterBtnActive} : styles.filterBtn}
+            onClick={() => setTimeFilter('thisMonth')}
+          >
+            This Month
+          </button>
+          <button 
+            style={timeFilter === 'last30Days' ? {...styles.filterBtn, ...styles.filterBtnActive} : styles.filterBtn}
+            onClick={() => setTimeFilter('last30Days')}
+          >
+            Last 30 Days
+          </button>
+          <button 
+            style={timeFilter === 'last3Months' ? {...styles.filterBtn, ...styles.filterBtnActive} : styles.filterBtn}
+            onClick={() => setTimeFilter('last3Months')}
+          >
+            Last 3 Months
+          </button>
+          <button 
+            style={timeFilter === 'last6Months' ? {...styles.filterBtn, ...styles.filterBtnActive} : styles.filterBtn}
+            onClick={() => setTimeFilter('last6Months')}
+          >
+            Last 6 Months
+          </button>
+          <button 
+            style={timeFilter === 'thisYear' ? {...styles.filterBtn, ...styles.filterBtnActive} : styles.filterBtn}
+            onClick={() => setTimeFilter('thisYear')}
+          >
+            This Year
+          </button>
+          <button 
+            style={timeFilter === 'allTime' ? {...styles.filterBtn, ...styles.filterBtnActive} : styles.filterBtn}
+            onClick={() => setTimeFilter('allTime')}
+          >
+            All Time
+          </button>
         </div>
 
         {/* RUN TAB */}
@@ -143,23 +263,41 @@ export default function Home() {
           <div>
             {/* Summary Metrics */}
             <div style={styles.metricsGrid}>
-              <MetricCard label="Runs" value={totalRuns} />
-              <MetricCard label="Total Distance" value={`${totalDistance} km`} />
-              <MetricCard label="Total Elevation" value={`${totalElevation} m`} />
-              <MetricCard label="Avg Pace" value={avgPace} />
+              <MetricCard label="Runs" value={statsData.totalRuns} />
+              <MetricCard label="Total Distance" value={`${statsData.totalDistance} km`} />
+              <MetricCard label="Total Elevation" value={`${statsData.totalElevation} m`} />
+              <MetricCard label="Avg Pace" value={statsData.avgPace} />
             </div>
 
             {/* Personal Records */}
             <h3 style={styles.prHeading}>Personal Records</h3>
             <div style={styles.prGrid}>
-              <PRCard label="5K PR" time="18:45" pace="3:45 /km" />
-              <PRCard label="10K PR" time="38:32" pace="3:51 /km" />
-              <PRCard label="Half Marathon PR" time="1:24:18" pace="3:59 /km" />
+              <PRCard label="5K PR" time="Coming Soon" pace="" />
+              <PRCard label="10K PR" time="Coming Soon" pace="" />
+              <PRCard label="Half Marathon PR" time="Coming Soon" pace="" />
+            </div>
+
+            {/* Consistency Grid Placeholder */}
+            <div style={styles.placeholderCard}>
+              <h3 style={styles.placeholderTitle}>Consistency Grid</h3>
+              <p style={styles.placeholderText}>Year-long activity heatmap coming soon!</p>
+            </div>
+
+            {/* Charts Placeholder */}
+            <div style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '16px', marginBottom: '24px'}}>
+              <div style={styles.placeholderCard}>
+                <h3 style={styles.placeholderTitle}>Monthly Distance Chart</h3>
+                <p style={styles.placeholderText}>Distance by month visualization</p>
+              </div>
+              <div style={styles.placeholderCard}>
+                <h3 style={styles.placeholderTitle}>Pace Distribution Chart</h3>
+                <p style={styles.placeholderText}>Pace analysis visualization</p>
+              </div>
             </div>
 
             {/* Recent Activities Table */}
             <div style={styles.tableCard}>
-              <h3 style={styles.tableTitle}>Recent Activities</h3>
+              <h3 style={styles.tableTitle}>Recent Activities ({filteredActivities.length} runs)</h3>
               <div style={{overflowX: 'auto'}}>
                 <table style={styles.table}>
                   <thead>
@@ -172,7 +310,7 @@ export default function Home() {
                     </tr>
                   </thead>
                   <tbody>
-                    {runningActivities.slice(0, 20).map((activity) => {
+                    {filteredActivities.slice(0, 20).map((activity) => {
                       const date = new Date(activity.start_date);
                       const distance = (activity.distance / 1000).toFixed(2);
                       const duration = Math.floor(activity.moving_time / 60);
@@ -205,14 +343,20 @@ export default function Home() {
         {activeTab === 'activities' && (
           <div>
             <div style={styles.metricsGrid}>
-              <MetricCard label="Total Runs" value={runningActivities.length} />
-              <MetricCard label="Total Distance" value={`${(runningActivities.reduce((sum, a) => sum + a.distance, 0) / 1000).toFixed(0)} km`} />
-              <MetricCard label="Total Elevation" value={`${runningActivities.reduce((sum, a) => sum + (a.total_elevation_gain || 0), 0).toFixed(0)} m`} />
-              <MetricCard label="Average Pace" value={avgPace} />
+              <MetricCard label="Total Runs" value={statsData.totalRuns} />
+              <MetricCard label="Total Distance" value={`${statsData.totalDistance} km`} />
+              <MetricCard label="Total Elevation" value={`${statsData.totalElevation} m`} />
+              <MetricCard label="Average Pace" value={statsData.avgPace} />
+            </div>
+
+            {/* Shoe Split Placeholder */}
+            <div style={styles.placeholderCard}>
+              <h3 style={styles.placeholderTitle}>Shoe Split</h3>
+              <p style={styles.placeholderText}>Shoe tracking coming soon! This will show distance by shoe.</p>
             </div>
 
             <div style={styles.tableCard}>
-              <h3 style={styles.tableTitle}>All Activities</h3>
+              <h3 style={styles.tableTitle}>All Activities ({filteredActivities.length} runs)</h3>
               <div style={{overflowX: 'auto'}}>
                 <table style={styles.table}>
                   <thead>
@@ -227,7 +371,7 @@ export default function Home() {
                     </tr>
                   </thead>
                   <tbody>
-                    {runningActivities.map((activity) => {
+                    {filteredActivities.map((activity) => {
                       const date = new Date(activity.start_date);
                       const distance = (activity.distance / 1000).toFixed(2);
                       const duration = Math.floor(activity.moving_time / 60);
@@ -262,7 +406,8 @@ export default function Home() {
         {activeTab === 'gear' && (
           <div style={{textAlign: 'center', padding: '60px 20px'}}>
             <h2 style={{color: '#242428', marginBottom: '16px'}}>👟 Gear Tab</h2>
-            <p style={{color: '#6D6D78'}}>Shoe tracking coming soon! This will show your running shoes and their mileage.</p>
+            <p style={{color: '#6D6D78', marginBottom: '16px'}}>Shoe tracking coming soon!</p>
+            <p style={{color: '#6D6D78', fontSize: '14px'}}>This will show your running shoes, mileage, and replacement alerts.</p>
           </div>
         )}
 
@@ -270,7 +415,8 @@ export default function Home() {
         {activeTab === 'calendar' && (
           <div style={{textAlign: 'center', padding: '60px 20px'}}>
             <h2 style={{color: '#242428', marginBottom: '16px'}}>📅 Calendar Tab</h2>
-            <p style={{color: '#6D6D78'}}>Calendar view coming soon! This will show your training calendar.</p>
+            <p style={{color: '#6D6D78', marginBottom: '16px'}}>Calendar view coming soon!</p>
+            <p style={{color: '#6D6D78', fontSize: '14px'}}>This will show your training calendar with runs visualized by day.</p>
           </div>
         )}
 
@@ -278,28 +424,13 @@ export default function Home() {
         {activeTab === 'races' && (
           <div style={{textAlign: 'center', padding: '60px 20px'}}>
             <h2 style={{color: '#242428', marginBottom: '16px'}}>🏆 Races Tab</h2>
-            <p style={{color: '#6D6D78'}}>Race results coming soon! This will show your race history and PRs.</p>
+            <p style={{color: '#6D6D78', marginBottom: '16px'}}>Race results coming soon!</p>
+            <p style={{color: '#6D6D78', fontSize: '14px'}}>This will show your race history, PRs, and performance trends.</p>
           </div>
         )}
       </div>
     </div>
   );
-}
-
-// Helper function
-function calculateAveragePace(activities) {
-  if (activities.length === 0) return '0:00 /km';
-  
-  const validActivities = activities.filter(a => a.distance > 0 && a.moving_time > 0);
-  if (validActivities.length === 0) return '0:00 /km';
-  
-  const avgPace = validActivities.reduce((sum, a) => {
-    return sum + (a.moving_time / 60) / (a.distance / 1000);
-  }, 0) / validActivities.length;
-  
-  const min = Math.floor(avgPace);
-  const sec = Math.floor((avgPace - min) * 60);
-  return `${min}:${sec.toString().padStart(2, '0')} /km`;
 }
 
 // Components
@@ -317,12 +448,12 @@ function PRCard({ label, time, pace }) {
     <div style={styles.prCard}>
       <div style={styles.metricLabel}>{label}</div>
       <div style={{...styles.metricValue, fontSize: '28px'}}>{time}</div>
-      <div style={styles.metricSubtext}>{pace}</div>
+      {pace && <div style={styles.metricSubtext}>{pace}</div>}
     </div>
   );
 }
 
-// Styles object continues in next message...// Styles
+// Styles
 const styles = {
   container: {
     fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
@@ -416,6 +547,7 @@ const styles = {
     border: '1px solid #E5E5E5',
     background: 'white',
     color: '#242428',
+    transition: 'all 0.2s',
   },
   filterBtnActive: {
     background: '#FC4C02',
@@ -460,7 +592,7 @@ const styles = {
   },
   prGrid: {
     display: 'grid',
-    gridTemplateColumns: 'repeat(3, 1fr)',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
     gap: '16px',
     marginBottom: '24px',
   },
@@ -471,6 +603,24 @@ const styles = {
     padding: '24px',
     borderTop: '3px solid #639922',
     textAlign: 'center',
+  },
+  placeholderCard: {
+    background: 'white',
+    border: '1px solid #E5E5E5',
+    borderRadius: '8px',
+    padding: '32px',
+    marginBottom: '24px',
+    textAlign: 'center',
+  },
+  placeholderTitle: {
+    fontSize: '16px',
+    fontWeight: '500',
+    color: '#242428',
+    marginBottom: '8px',
+  },
+  placeholderText: {
+    fontSize: '14px',
+    color: '#6D6D78',
   },
   tableCard: {
     background: 'white',
