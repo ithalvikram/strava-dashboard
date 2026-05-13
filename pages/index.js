@@ -10,9 +10,21 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('run');
   const [timeFilter, setTimeFilter] = useState('thisWeek');
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
+  const [chartsInitialized, setChartsInitialized] = useState(false);
 
   useEffect(() => {
     checkAuth();
+  }, []);
+
+  useEffect(() => {
+    // Load Chart.js dynamically
+    const script = document.createElement('script');
+    script.src = 'https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js';
+    script.async = true;
+    script.onload = () => setChartsInitialized(true);
+    document.body.appendChild(script);
   }, []);
 
   const checkAuth = async () => {
@@ -52,6 +64,12 @@ export default function Home() {
 
   const handleLogin = () => {
     window.location.href = '/api/strava/auth';
+  };
+
+  const applyCustomDateFilter = () => {
+    if (startDate && endDate) {
+      setTimeFilter('custom');
+    }
   };
 
   // Filter activities based on time range
@@ -95,11 +113,279 @@ export default function Home() {
           
         case 'thisYear':
           return activityDate.getFullYear() === now.getFullYear();
+
+        case 'custom':
+          if (startDate && endDate) {
+            const start = new Date(startDate);
+            const end = new Date(endDate);
+            end.setHours(23, 59, 59, 999);
+            return activityDate >= start && activityDate <= end;
+          }
+          return true;
           
         case 'allTime':
         default:
           return true;
       }
+    });
+  };
+
+  // Initialize charts after component mounts
+  useEffect(() => {
+    if (chartsInitialized && activeTab === 'run' && activities.length > 0) {
+      setTimeout(() => initializeRunCharts(), 100);
+    }
+    if (chartsInitialized && activeTab === 'gear' && activities.length > 0) {
+      setTimeout(() => initializeGearCharts(), 100);
+    }
+  }, [chartsInitialized, activeTab, activities, timeFilter]);
+
+  const initializeRunCharts = () => {
+    if (typeof window === 'undefined' || !window.Chart) return;
+
+    const filteredActs = getFilteredActivities();
+    
+    // Monthly Distance Chart
+    const monthlyCanvas = document.getElementById('monthlyChart');
+    if (monthlyCanvas) {
+      const monthlyCtx = monthlyCanvas.getContext('2d');
+      if (window.monthlyChartInstance) window.monthlyChartInstance.destroy();
+      
+      const monthlyData = Array(12).fill(0);
+      filteredActs.forEach(act => {
+        const month = new Date(act.start_date).getMonth();
+        monthlyData[month] += act.distance / 1000;
+      });
+
+      window.monthlyChartInstance = new window.Chart(monthlyCtx, {
+        type: 'bar',
+        data: {
+          labels: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'],
+          datasets: [{
+            label: 'Distance (km)',
+            data: monthlyData.map(d => d.toFixed(1)),
+            backgroundColor: '#FC4C02',
+            borderRadius: 4
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: true,
+          plugins: { legend: { display: false } },
+          scales: {
+            y: { beginAtZero: true }
+          }
+        }
+      });
+    }
+
+    // Yearly Distance Chart
+    const yearlyCanvas = document.getElementById('yearlyChart');
+    if (yearlyCanvas) {
+      const yearlyCtx = yearlyCanvas.getContext('2d');
+      if (window.yearlyChartInstance) window.yearlyChartInstance.destroy();
+
+      const yearlyData = {};
+      activities.filter(a => a.type === 'Run').forEach(act => {
+        const year = new Date(act.start_date).getFullYear();
+        yearlyData[year] = (yearlyData[year] || 0) + (act.distance / 1000);
+      });
+
+      const years = Object.keys(yearlyData).sort();
+      const distances = years.map(y => yearlyData[y].toFixed(0));
+
+      window.yearlyChartInstance = new window.Chart(yearlyCtx, {
+        type: 'bar',
+        data: {
+          labels: years,
+          datasets: [{
+            label: 'Distance (km)',
+            data: distances,
+            backgroundColor: '#FC4C02',
+            borderRadius: 4
+          }]
+        },
+        options: {
+          indexAxis: 'y',
+          responsive: true,
+          maintainAspectRatio: true,
+          plugins: { legend: { display: false } },
+          scales: {
+            x: { beginAtZero: true }
+          }
+        }
+      });
+    }
+
+    // Distance Distribution
+    const distCanvas = document.getElementById('distanceDistChart');
+    if (distCanvas) {
+      const distCtx = distCanvas.getContext('2d');
+      if (window.distChartInstance) window.distChartInstance.destroy();
+
+      const bins = [0, 0, 0, 0, 0]; // 0-5, 6-10, 11-15, 16-20, 21+
+      filteredActs.forEach(act => {
+        const km = act.distance / 1000;
+        if (km <= 5) bins[0]++;
+        else if (km <= 10) bins[1]++;
+        else if (km <= 15) bins[2]++;
+        else if (km <= 20) bins[3]++;
+        else bins[4]++;
+      });
+
+      window.distChartInstance = new window.Chart(distCtx, {
+        type: 'bar',
+        data: {
+          labels: ['0-5 km', '6-10 km', '11-15 km', '16-20 km', '21+ km'],
+          datasets: [{
+            label: 'Number of Runs',
+            data: bins,
+            backgroundColor: '#FC4C02',
+            borderRadius: 4
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: true,
+          plugins: { legend: { display: false } },
+          scales: {
+            y: { beginAtZero: true, ticks: { stepSize: 1 } }
+          }
+        }
+      });
+    }
+
+    // Pace Distribution
+    const paceCanvas = document.getElementById('paceDistChart');
+    if (paceCanvas) {
+      const paceCtx = paceCanvas.getContext('2d');
+      if (window.paceChartInstance) window.paceChartInstance.destroy();
+
+      const paceBins = Array(9).fill(0);
+      const paceLabels = ['<4:00', '4:00-4:30', '4:30-5:00', '5:00-5:30', '5:30-6:00', '6:00-6:30', '6:30-7:00', '7:00-7:30', '>7:30'];
+      
+      filteredActs.filter(a => a.distance > 0 && a.moving_time > 0).forEach(act => {
+        const paceMin = (act.moving_time / 60) / (act.distance / 1000);
+        if (paceMin < 4) paceBins[0]++;
+        else if (paceMin < 4.5) paceBins[1]++;
+        else if (paceMin < 5) paceBins[2]++;
+        else if (paceMin < 5.5) paceBins[3]++;
+        else if (paceMin < 6) paceBins[4]++;
+        else if (paceMin < 6.5) paceBins[5]++;
+        else if (paceMin < 7) paceBins[6]++;
+        else if (paceMin < 7.5) paceBins[7]++;
+        else paceBins[8]++;
+      });
+
+      window.paceChartInstance = new window.Chart(paceCtx, {
+        type: 'bar',
+        data: {
+          labels: paceLabels,
+          datasets: [{
+            label: 'Number of Runs',
+            data: paceBins,
+            backgroundColor: '#FC4C02',
+            borderRadius: 4
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: true,
+          plugins: { legend: { display: false } },
+          scales: {
+            y: { beginAtZero: true, ticks: { stepSize: 1 } }
+          }
+        }
+      });
+    }
+  };
+
+  const initializeGearCharts = () => {
+    if (typeof window === 'undefined' || !window.Chart) return;
+
+    const shoeCanvas = document.getElementById('shoeDistanceChart');
+    if (shoeCanvas) {
+      const shoeCtx = shoeCanvas.getContext('2d');
+      if (window.shoeChartInstance) window.shoeChartInstance.destroy();
+
+      // Sample data for shoe distance over time
+      const months = [];
+      const startDate = new Date();
+      startDate.setMonth(startDate.getMonth() - 12);
+      
+      for (let i = 0; i < 13; i++) {
+        const date = new Date(startDate);
+        date.setMonth(startDate.getMonth() + i);
+        months.push(date.toLocaleDateString('en-US', { month: 'short', year: '2-digit' }));
+      }
+
+      window.shoeChartInstance = new window.Chart(shoeCtx, {
+        type: 'line',
+        data: {
+          labels: months,
+          datasets: [
+            {
+              label: 'Total Distance',
+              data: months.map((_, i) => (i + 1) * 50),
+              borderColor: '#FC4C02',
+              backgroundColor: 'rgba(252, 76, 2, 0.1)',
+              borderWidth: 3,
+              tension: 0.3,
+              fill: true
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: true,
+          plugins: {
+            legend: { display: true }
+          },
+          scales: {
+            y: {
+              beginAtZero: true,
+              title: { display: true, text: 'Distance (km)' }
+            }
+          }
+        }
+      });
+    }
+  };
+
+  // Generate consistency grid data
+  const generateConsistencyGrid = () => {
+    const filteredActs = getFilteredActivities();
+    const activityDates = {};
+    
+    filteredActs.forEach(act => {
+      const date = new Date(act.start_date).toDateString();
+      activityDates[date] = (activityDates[date] || 0) + 1;
+    });
+
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const now = new Date();
+    const year = now.getFullYear();
+
+    return months.map((month, monthIndex) => {
+      const daysInMonth = new Date(year, monthIndex + 1, 0).getDate();
+      const days = [];
+      
+      for (let day = 1; day <= daysInMonth; day++) {
+        const date = new Date(year, monthIndex, day);
+        const dateStr = date.toDateString();
+        const count = activityDates[dateStr] || 0;
+        
+        let intensity = '';
+        if (count === 0) intensity = '';
+        else if (count === 1) intensity = 'light';
+        else if (count === 2) intensity = 'medium';
+        else if (count === 3) intensity = 'dark';
+        else intensity = 'darker';
+        
+        days.push({ date: day, intensity });
+      }
+      
+      return { month, days };
     });
   };
 
@@ -128,29 +414,13 @@ export default function Home() {
     );
   }
 
-  // Get filtered activities
   const filteredActivities = getFilteredActivities();
-  
-  // Calculate stats from filtered activities
   const totalRuns = filteredActivities.length;
   const totalDistance = (filteredActivities.reduce((sum, a) => sum + a.distance, 0) / 1000).toFixed(0);
   const totalElevation = filteredActivities.reduce((sum, a) => sum + (a.total_elevation_gain || 0), 0).toFixed(0);
   const avgPace = calculateAveragePace(filteredActivities);
 
-  // Get filter label for display
-  const getFilterLabel = () => {
-    switch(timeFilter) {
-      case 'thisWeek': return 'This Week';
-      case 'last7Days': return 'Last 7 Days';
-      case 'thisMonth': return 'This Month';
-      case 'last30Days': return 'Last 30 Days';
-      case 'last3Months': return 'Last 3 Months';
-      case 'last6Months': return 'Last 6 Months';
-      case 'thisYear': return 'This Year';
-      case 'allTime': return 'All Time';
-      default: return 'All Time';
-    }
-  };
+  const consistencyData = generateConsistencyGrid();
 
   return (
     <div style={styles.container}>
@@ -159,9 +429,6 @@ export default function Home() {
       </Head>
       
       <div style={styles.dashboard}>
-        <h1 style={styles.welcomeTitle}>Welcome, {athlete?.firstname}!</h1>
-        <p style={styles.subtitle}>Your Strava Running Dashboard</p>
-
         {/* Tabs */}
         <div style={styles.tabs}>
           <button 
@@ -246,14 +513,27 @@ export default function Home() {
           >
             All Time
           </button>
+          <input 
+            type="date" 
+            style={styles.dateInput}
+            value={startDate}
+            onChange={(e) => setStartDate(e.target.value)}
+            placeholder="Start Date"
+          />
+          <input 
+            type="date" 
+            style={styles.dateInput}
+            value={endDate}
+            onChange={(e) => setEndDate(e.target.value)}
+            placeholder="End Date"
+          />
         </div>
 
-        <p style={styles.filterLabel}>Showing data for: <strong>{getFilterLabel()}</strong></p>
+        <button style={styles.applyBtn} onClick={applyCustomDateFilter}>Apply</button>
 
         {/* RUN TAB */}
         {activeTab === 'run' && (
           <div>
-            {/* Summary Metrics */}
             <div style={styles.metricsGrid}>
               <MetricCard label="Runs" value={totalRuns} />
               <MetricCard label="Total Distance" value={`${totalDistance} km`} />
@@ -261,7 +541,6 @@ export default function Home() {
               <MetricCard label="Avg Pace" value={avgPace} />
             </div>
 
-            {/* Personal Records */}
             <h3 style={styles.prHeading}>Personal Records</h3>
             <div style={styles.prGrid}>
               <PRCard label="5K PR" time="18:45" pace="3:45 /km" />
@@ -269,56 +548,84 @@ export default function Home() {
               <PRCard label="Half Marathon PR" time="1:24:18" pace="3:59 /km" />
             </div>
 
-            {/* Consistency Grid Placeholder */}
-            <h3 style={styles.sectionHeading}>Consistency Grid</h3>
-            <div style={styles.placeholderBox}>
-              <p>GitHub-style heatmap showing your running consistency</p>
-              <p style={{fontSize: '12px', color: '#6D6D78'}}>Coming soon: Visual calendar showing days you ran</p>
+            {/* Consistency Grid */}
+            <div style={styles.consistencyCard}>
+              <h3 style={styles.consistencyHeading}>Consistency Grid</h3>
+              <div style={styles.monthsContainer}>
+                {consistencyData.map((monthData, idx) => (
+                  <div key={idx} style={styles.monthCol}>
+                    <div style={styles.monthLabel}>{monthData.month}</div>
+                    <div style={styles.daysGrid}>
+                      {monthData.days.map((day, dayIdx) => (
+                        <div 
+                          key={dayIdx} 
+                          style={{
+                            ...styles.dayCell,
+                            ...(day.intensity === 'light' && styles.dayCellLight),
+                            ...(day.intensity === 'medium' && styles.dayCellMedium),
+                            ...(day.intensity === 'dark' && styles.dayCellDark),
+                            ...(day.intensity === 'darker' && styles.dayCellDarker),
+                          }}
+                          title={`${monthData.month} ${day.date}`}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
 
-            {/* Charts Placeholder */}
-            <h3 style={styles.sectionHeading}>Running Charts</h3>
+            {/* Charts */}
             <div style={styles.chartsGrid}>
-              <div style={styles.placeholderBox}>
-                <p><strong>Monthly Distance</strong></p>
-                <p style={{fontSize: '12px', color: '#6D6D78'}}>Bar chart showing distance per month</p>
+              <div style={styles.chartCard}>
+                <h3 style={styles.chartTitle}>Monthly Distance</h3>
+                <canvas id="monthlyChart"></canvas>
               </div>
-              <div style={styles.placeholderBox}>
-                <p><strong>Pace Distribution</strong></p>
-                <p style={{fontSize: '12px', color: '#6D6D78'}}>Histogram of your typical running paces</p>
+              <div style={styles.chartCard}>
+                <h3 style={styles.chartTitle}>Yearly Distance</h3>
+                <canvas id="yearlyChart"></canvas>
+              </div>
+            </div>
+
+            <div style={styles.chartsGrid}>
+              <div style={styles.chartCard}>
+                <h3 style={styles.chartTitle}>Distance Distribution</h3>
+                <canvas id="distanceDistChart"></canvas>
+              </div>
+              <div style={styles.chartCard}>
+                <h3 style={styles.chartTitle}>Pace Distribution</h3>
+                <canvas id="paceDistChart"></canvas>
               </div>
             </div>
 
             {/* Top 10 Tables */}
-            <h3 style={styles.sectionHeading}>Top 10 Runs</h3>
             <div style={styles.topTablesGrid}>
-              {/* Longest Runs */}
               <div style={styles.tableCard}>
                 <h4 style={styles.tableTitle}>Longest Runs</h4>
-                <table style={styles.table}>
+                <table style={styles.runsTable}>
                   <thead>
-                    <tr style={styles.tableHeaderRow}>
-                      <th style={styles.tableHeader}>Date</th>
-                      <th style={styles.tableHeader}>Name</th>
-                      <th style={styles.tableHeader}>Distance</th>
+                    <tr>
+                      <th style={styles.runsTableHeader}>#</th>
+                      <th style={styles.runsTableHeader}>Date</th>
+                      <th style={styles.runsTableHeader}>Distance</th>
                     </tr>
                   </thead>
                   <tbody>
                     {[...filteredActivities]
                       .sort((a, b) => b.distance - a.distance)
                       .slice(0, 10)
-                      .map((activity) => {
+                      .map((activity, idx) => {
                         const date = new Date(activity.start_date);
                         const distance = (activity.distance / 1000).toFixed(2);
                         return (
-                          <tr key={activity.id} style={styles.tableRow}>
-                            <td style={styles.tableCell}>{date.toLocaleDateString()}</td>
-                            <td style={styles.tableCell}>
+                          <tr key={activity.id}>
+                            <td style={styles.runsTableCell}><span style={styles.rank}>{idx + 1}</span></td>
+                            <td style={styles.runsTableCell}>
                               <a href={`https://www.strava.com/activities/${activity.id}`} target="_blank" rel="noopener noreferrer" style={styles.link}>
-                                {activity.name}
+                                {date.toLocaleDateString()}
                               </a>
                             </td>
-                            <td style={styles.tableCell}>{distance} km</td>
+                            <td style={styles.runsTableCell}>{distance} km</td>
                           </tr>
                         );
                       })}
@@ -326,33 +633,32 @@ export default function Home() {
                 </table>
               </div>
 
-              {/* Most Elevated Runs */}
               <div style={styles.tableCard}>
                 <h4 style={styles.tableTitle}>Most Elevated Runs</h4>
-                <table style={styles.table}>
+                <table style={styles.runsTable}>
                   <thead>
-                    <tr style={styles.tableHeaderRow}>
-                      <th style={styles.tableHeader}>Date</th>
-                      <th style={styles.tableHeader}>Name</th>
-                      <th style={styles.tableHeader}>Elevation</th>
+                    <tr>
+                      <th style={styles.runsTableHeader}>#</th>
+                      <th style={styles.runsTableHeader}>Date</th>
+                      <th style={styles.runsTableHeader}>Elevation</th>
                     </tr>
                   </thead>
                   <tbody>
                     {[...filteredActivities]
                       .sort((a, b) => (b.total_elevation_gain || 0) - (a.total_elevation_gain || 0))
                       .slice(0, 10)
-                      .map((activity) => {
+                      .map((activity, idx) => {
                         const date = new Date(activity.start_date);
                         const elevation = Math.round(activity.total_elevation_gain || 0);
                         return (
-                          <tr key={activity.id} style={styles.tableRow}>
-                            <td style={styles.tableCell}>{date.toLocaleDateString()}</td>
-                            <td style={styles.tableCell}>
+                          <tr key={activity.id}>
+                            <td style={styles.runsTableCell}><span style={styles.rank}>{idx + 1}</span></td>
+                            <td style={styles.runsTableCell}>
                               <a href={`https://www.strava.com/activities/${activity.id}`} target="_blank" rel="noopener noreferrer" style={styles.link}>
-                                {activity.name}
+                                {date.toLocaleDateString()}
                               </a>
                             </td>
-                            <td style={styles.tableCell}>{elevation} m</td>
+                            <td style={styles.runsTableCell}>{elevation} m</td>
                           </tr>
                         );
                       })}
@@ -360,15 +666,14 @@ export default function Home() {
                 </table>
               </div>
 
-              {/* Fastest Runs */}
               <div style={styles.tableCard}>
                 <h4 style={styles.tableTitle}>Fastest Runs</h4>
-                <table style={styles.table}>
+                <table style={styles.runsTable}>
                   <thead>
-                    <tr style={styles.tableHeaderRow}>
-                      <th style={styles.tableHeader}>Date</th>
-                      <th style={styles.tableHeader}>Name</th>
-                      <th style={styles.tableHeader}>Pace</th>
+                    <tr>
+                      <th style={styles.runsTableHeader}>#</th>
+                      <th style={styles.runsTableHeader}>Date</th>
+                      <th style={styles.runsTableHeader}>Pace</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -380,20 +685,20 @@ export default function Home() {
                         return paceA - paceB;
                       })
                       .slice(0, 10)
-                      .map((activity) => {
+                      .map((activity, idx) => {
                         const date = new Date(activity.start_date);
                         const pace = (activity.moving_time / 60) / (activity.distance / 1000);
                         const paceMin = Math.floor(pace);
                         const paceSec = Math.floor((pace - paceMin) * 60);
                         return (
-                          <tr key={activity.id} style={styles.tableRow}>
-                            <td style={styles.tableCell}>{date.toLocaleDateString()}</td>
-                            <td style={styles.tableCell}>
+                          <tr key={activity.id}>
+                            <td style={styles.runsTableCell}><span style={styles.rank}>{idx + 1}</span></td>
+                            <td style={styles.runsTableCell}>
                               <a href={`https://www.strava.com/activities/${activity.id}`} target="_blank" rel="noopener noreferrer" style={styles.link}>
-                                {activity.name}
+                                {date.toLocaleDateString()}
                               </a>
                             </td>
-                            <td style={styles.tableCell}>{paceMin}:{paceSec.toString().padStart(2, '0')} /km</td>
+                            <td style={styles.runsTableCell}>{paceMin}:{paceSec.toString().padStart(2, '0')} /km</td>
                           </tr>
                         );
                       })}
@@ -402,7 +707,7 @@ export default function Home() {
               </div>
             </div>
 
-            {/* Recent Activities Table */}
+            {/* Recent Activities */}
             <div style={styles.tableCard}>
               <h3 style={styles.tableTitle}>Recent Activities</h3>
               <div style={{overflowX: 'auto'}}>
@@ -442,6 +747,72 @@ export default function Home() {
                   </tbody>
                 </table>
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* GEAR TAB */}
+        {activeTab === 'gear' && (
+          <div>
+            <h2 style={styles.sectionTitle}>👟 Your Gear</h2>
+            
+            <div style={styles.shoeGrid}>
+              <div style={{...styles.shoeCard, ...styles.shoeCardActive}}>
+                <div style={styles.shoeHeader}>
+                  <div style={styles.shoeIcon}>👟</div>
+                  <div>
+                    <h3 style={styles.shoeName}>Current Shoes</h3>
+                    <div style={styles.shoeType}>Road Running</div>
+                  </div>
+                </div>
+                <div style={styles.distanceBig}>
+                  {totalDistance} <span style={styles.distanceUnit}>km</span>
+                </div>
+                <div style={styles.progressBar}>
+                  <div style={{...styles.progressFill, width: `${Math.min((totalDistance / 700) * 100, 100)}%`}}></div>
+                </div>
+                <div style={styles.progressLabel}>{Math.min(Math.round((totalDistance / 700) * 100), 100)}% of 700 km lifespan</div>
+                <div style={styles.statsGrid}>
+                  <div style={styles.statItem}>
+                    <span style={styles.statIcon}>🏃</span>
+                    <div>
+                      <div style={styles.statValue}>{totalRuns}</div>
+                      <span style={styles.statLabel}>Uses</span>
+                    </div>
+                  </div>
+                  <div style={styles.statItem}>
+                    <span style={styles.statIcon}>📏</span>
+                    <div>
+                      <div style={styles.statValue}>{totalRuns > 0 ? (totalDistance / totalRuns).toFixed(2) : 0} km</div>
+                      <span style={styles.statLabel}>Avg Dist</span>
+                    </div>
+                  </div>
+                  <div style={styles.statItem}>
+                    <span style={styles.statIcon}>⛰️</span>
+                    <div>
+                      <div style={styles.statValue}>{totalRuns > 0 ? Math.round(totalElevation / totalRuns) : 0}m</div>
+                      <span style={styles.statLabel}>Avg Elev</span>
+                    </div>
+                  </div>
+                  <div style={styles.statItem}>
+                    <span style={styles.statIcon}>⚡</span>
+                    <div>
+                      <div style={styles.statValue}>{avgPace}</div>
+                      <span style={styles.statLabel}>Avg Pace</span>
+                    </div>
+                  </div>
+                </div>
+                {totalDistance > 700 && (
+                  <div style={styles.replacementBanner}>
+                    <span style={styles.replacementText}>⚠️ Replacement Recommended!</span>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div style={styles.chartCard}>
+              <h3 style={styles.chartTitle}>Distance Over Time</h3>
+              <canvas id="shoeDistanceChart"></canvas>
             </div>
           </div>
         )}
@@ -503,11 +874,60 @@ export default function Home() {
           </div>
         )}
 
-        {/* GEAR TAB */}
-        {activeTab === 'gear' && (
-          <div style={{textAlign: 'center', padding: '60px 20px'}}>
-            <h2 style={{color: '#242428', marginBottom: '16px'}}>👟 Gear Tab</h2>
-            <p style={{color: '#6D6D78'}}>Shoe tracking coming soon! This will show your running shoes and their mileage.</p>
+        {/* RACES TAB */}
+        {activeTab === 'races' && (
+          <div>
+            <div style={styles.raceStatsGrid}>
+              <MetricCard label="Total Races" value={filteredActivities.filter(a => a.workout_type === 1).length} />
+              <MetricCard label="10K Runs" value={filteredActivities.filter(a => a.distance >= 9500 && a.distance <= 10500).length} />
+              <MetricCard label="Half Marathons" value={filteredActivities.filter(a => a.distance >= 20000 && a.distance <= 22000).length} />
+            </div>
+
+            <div style={styles.tableCard}>
+              <h3 style={styles.tableTitle}>Race Results</h3>
+              <div style={{overflowX: 'auto'}}>
+                <table style={styles.table}>
+                  <thead>
+                    <tr style={styles.tableHeaderRow}>
+                      <th style={styles.tableHeader}>Date</th>
+                      <th style={styles.tableHeader}>Activity</th>
+                      <th style={styles.tableHeader}>Distance (km)</th>
+                      <th style={styles.tableHeader}>Elevation (m)</th>
+                      <th style={styles.tableHeader}>Pace /km</th>
+                      <th style={styles.tableHeader}>Avg HR</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredActivities
+                      .filter(a => a.workout_type === 1 || a.distance >= 5000)
+                      .slice(0, 20)
+                      .map((activity) => {
+                        const date = new Date(activity.start_date);
+                        const distance = (activity.distance / 1000).toFixed(2);
+                        const elevation = Math.round(activity.total_elevation_gain || 0);
+                        const pace = activity.distance > 0 ? (activity.moving_time / 60) / (activity.distance / 1000) : 0;
+                        const paceMin = Math.floor(pace);
+                        const paceSec = Math.floor((pace - paceMin) * 60);
+                        
+                        return (
+                          <tr key={activity.id} style={styles.tableRow}>
+                            <td style={styles.tableCell}>{date.toLocaleDateString()}</td>
+                            <td style={styles.tableCell}>
+                              <a href={`https://www.strava.com/activities/${activity.id}`} target="_blank" rel="noopener noreferrer" style={styles.link}>
+                                {activity.name}
+                              </a>
+                            </td>
+                            <td style={styles.tableCell}>{distance}</td>
+                            <td style={styles.tableCell}>{elevation}</td>
+                            <td style={styles.tableCell}>{paceMin}:{paceSec.toString().padStart(2, '0')} /km</td>
+                            <td style={styles.tableCell}>{activity.average_heartrate ? Math.round(activity.average_heartrate) : '-'}</td>
+                          </tr>
+                        );
+                      })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
           </div>
         )}
 
@@ -515,15 +935,7 @@ export default function Home() {
         {activeTab === 'calendar' && (
           <div style={{textAlign: 'center', padding: '60px 20px'}}>
             <h2 style={{color: '#242428', marginBottom: '16px'}}>📅 Calendar Tab</h2>
-            <p style={{color: '#6D6D78'}}>Calendar view coming soon! This will show your training calendar.</p>
-          </div>
-        )}
-
-        {/* RACES TAB */}
-        {activeTab === 'races' && (
-          <div style={{textAlign: 'center', padding: '60px 20px'}}>
-            <h2 style={{color: '#242428', marginBottom: '16px'}}>🏆 Races Tab</h2>
-            <p style={{color: '#6D6D78'}}>Race results coming soon! This will show your race history and PRs.</p>
+            <p style={{color: '#6D6D78'}}>Calendar view coming soon!</p>
           </div>
         )}
       </div>
@@ -531,7 +943,7 @@ export default function Home() {
   );
 }
 
-// Helper function
+// Helper functions
 function calculateAveragePace(activities) {
   if (activities.length === 0) return '0:00 /km';
   
@@ -624,17 +1036,6 @@ const styles = {
     padding: '24px',
     boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
   },
-  welcomeTitle: {
-    fontSize: '28px',
-    fontWeight: '600',
-    color: '#242428',
-    marginBottom: '8px',
-  },
-  subtitle: {
-    fontSize: '14px',
-    color: '#6D6D78',
-    marginBottom: '24px',
-  },
   tabs: {
     display: 'flex',
     gap: '8px',
@@ -663,6 +1064,7 @@ const styles = {
     gap: '8px',
     flexWrap: 'wrap',
     marginBottom: '16px',
+    alignItems: 'center',
   },
   filterBtn: {
     padding: '8px 18px',
@@ -678,9 +1080,25 @@ const styles = {
     color: 'white',
     borderColor: '#FC4C02',
   },
-  filterLabel: {
-    fontSize: '14px',
+  dateInput: {
+    padding: '8px 12px',
+    borderRadius: '8px',
+    fontSize: '13px',
+    border: '1px solid #E5E5E5',
+    background: 'white',
     color: '#6D6D78',
+    width: '140px',
+  },
+  applyBtn: {
+    padding: '10px 32px',
+    borderRadius: '8px',
+    fontSize: '15px',
+    fontWeight: '500',
+    cursor: 'pointer',
+    border: '2px solid #FC4C02',
+    background: '#FC4C02',
+    color: 'white',
+    transition: 'all 0.2s',
     marginBottom: '24px',
   },
   metricsGrid: {
@@ -713,12 +1131,6 @@ const styles = {
     color: '#6D6D78',
     marginTop: '8px',
   },
-  sectionHeading: {
-    fontSize: '18px',
-    fontWeight: '500',
-    color: '#242428',
-    margin: '32px 0 16px 0',
-  },
   prHeading: {
     fontSize: '18px',
     fontWeight: '500',
@@ -727,7 +1139,7 @@ const styles = {
   },
   prGrid: {
     display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+    gridTemplateColumns: 'repeat(3, 1fr)',
     gap: '16px',
     marginBottom: '24px',
   },
@@ -739,20 +1151,66 @@ const styles = {
     borderTop: '3px solid #639922',
     textAlign: 'center',
   },
-  placeholderBox: {
-    background: '#F7F8FA',
-    border: '2px dashed #E5E5E5',
+  consistencyCard: {
+    background: 'white',
+    border: '1px solid #E5E5E5',
     borderRadius: '8px',
-    padding: '40px',
-    textAlign: 'center',
+    padding: '24px',
     marginBottom: '24px',
-    color: '#6D6D78',
   },
+  consistencyHeading: {
+    fontSize: '18px',
+    fontWeight: '500',
+    color: '#639922',
+    margin: '0 0 24px 0',
+  },
+  monthsContainer: {
+    display: 'flex',
+    gap: '24px',
+    overflowX: 'auto',
+    paddingBottom: '8px',
+  },
+  monthCol: {
+    minWidth: '80px',
+  },
+  monthLabel: {
+    fontSize: '12px',
+    color: '#6D6D78',
+    marginBottom: '8px',
+    textAlign: 'center',
+  },
+  daysGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(5, 11px)',
+    gap: '3px',
+  },
+  dayCell: {
+    width: '11px',
+    height: '11px',
+    borderRadius: '2px',
+    background: '#E5E5E5',
+  },
+  dayCellLight: { background: '#FFC299' },
+  dayCellMedium: { background: '#FF8547' },
+  dayCellDark: { background: '#FC4C02' },
+  dayCellDarker: { background: '#C73D02' },
   chartsGrid: {
     display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))',
     gap: '16px',
     marginBottom: '24px',
+  },
+  chartCard: {
+    background: 'white',
+    border: '1px solid #E5E5E5',
+    borderRadius: '8px',
+    padding: '24px',
+  },
+  chartTitle: {
+    fontSize: '16px',
+    fontWeight: '500',
+    color: '#242428',
+    margin: '0 0 24px 0',
   },
   topTablesGrid: {
     display: 'grid',
@@ -772,6 +1230,26 @@ const styles = {
     fontWeight: '500',
     color: '#242428',
     marginBottom: '20px',
+  },
+  runsTable: {
+    width: '100%',
+    borderCollapse: 'collapse',
+    fontSize: '13px',
+  },
+  runsTableHeader: {
+    textAlign: 'left',
+    padding: '8px 12px',
+    color: '#6D6D78',
+    fontWeight: '500',
+    borderBottom: '1px solid #E5E5E5',
+  },
+  runsTableCell: {
+    padding: '10px 12px',
+    borderBottom: '1px solid #E5E5E5',
+  },
+  rank: {
+    color: '#6D6D78',
+    fontWeight: '500',
   },
   table: {
     width: '100%',
@@ -796,5 +1274,136 @@ const styles = {
   link: {
     color: '#FC4C02',
     textDecoration: 'none',
+  },
+  sectionTitle: {
+    fontSize: '24px',
+    fontWeight: '600',
+    color: '#242428',
+    marginBottom: '24px',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+  },
+  shoeGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))',
+    gap: '20px',
+    marginBottom: '32px',
+  },
+  shoeCard: {
+    background: 'white',
+    border: '1px solid #E5E5E5',
+    borderRadius: '8px',
+    padding: '24px',
+    borderTop: '4px solid #FF8C00',
+  },
+  shoeCardActive: {
+    borderTopColor: '#FC4C02',
+  },
+  shoeHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '12px',
+    marginBottom: '16px',
+  },
+  shoeIcon: {
+    width: '48px',
+    height: '48px',
+    background: '#F7F8FA',
+    borderRadius: '8px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    fontSize: '24px',
+  },
+  shoeName: {
+    fontSize: '18px',
+    fontWeight: '600',
+    color: '#242428',
+    margin: 0,
+  },
+  shoeType: {
+    fontSize: '12px',
+    fontWeight: '600',
+    color: '#FF8C00',
+    textTransform: 'uppercase',
+    letterSpacing: '0.5px',
+  },
+  distanceBig: {
+    fontSize: '48px',
+    fontWeight: '700',
+    color: '#FF8C00',
+    textAlign: 'center',
+    margin: '20px 0',
+  },
+  distanceUnit: {
+    fontSize: '18px',
+    fontWeight: '500',
+    color: '#6D6D78',
+  },
+  progressBar: {
+    width: '100%',
+    height: '8px',
+    background: '#E5E5E5',
+    borderRadius: '4px',
+    overflow: 'hidden',
+    margin: '12px 0',
+  },
+  progressFill: {
+    height: '100%',
+    background: '#FF8C00',
+    borderRadius: '4px',
+    transition: 'width 0.3s',
+  },
+  progressLabel: {
+    textAlign: 'center',
+    fontSize: '12px',
+    color: '#6D6D78',
+    marginBottom: '16px',
+  },
+  statsGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(2, 1fr)',
+    gap: '16px',
+    marginTop: '16px',
+  },
+  statItem: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+  },
+  statIcon: {
+    fontSize: '18px',
+  },
+  statValue: {
+    fontSize: '16px',
+    fontWeight: '600',
+    color: '#242428',
+  },
+  statLabel: {
+    fontSize: '11px',
+    color: '#6D6D78',
+    textTransform: 'uppercase',
+    letterSpacing: '0.5px',
+    display: 'block',
+  },
+  replacementBanner: {
+    background: 'rgba(255,68,68,0.1)',
+    border: '1px solid #FF4444',
+    borderRadius: '8px',
+    padding: '12px',
+    textAlign: 'center',
+    marginTop: '16px',
+  },
+  replacementText: {
+    color: '#FF4444',
+    fontWeight: '600',
+    fontSize: '13px',
+  },
+  raceStatsGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(3, 1fr)',
+    gap: '16px',
+    marginBottom: '24px',
   },
 };
