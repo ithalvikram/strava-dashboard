@@ -354,53 +354,82 @@ export default function Home() {
 
   // Generate consistency grid data based on PACE
   const generateConsistencyGrid = () => {
-    const filteredActs = getFilteredActivities();
-    const activityDates = {};
+  const filteredActs = getFilteredActivities();
+  const activityDates = {};
+  
+  // Group activities by date and get the fastest pace for that day
+  filteredActs.forEach(act => {
+    if (act.distance > 0 && act.moving_time > 0) {
+      const date = new Date(act.start_date).toDateString();
+      const pace = (act.moving_time / 60) / (act.distance / 1000); // pace in min/km
+      
+      if (!activityDates[date] || pace < activityDates[date]) {
+        activityDates[date] = pace; // Store fastest pace for the day
+      }
+    }
+  });
+
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const now = new Date();
+  const year = now.getFullYear();
+
+  return months.map((month, monthIndex) => {
+    const firstDay = new Date(year, monthIndex, 1);
+    const lastDay = new Date(year, monthIndex + 1, 0);
+    const daysInMonth = lastDay.getDate();
     
-    // Group activities by date and get the fastest pace for that day
-    filteredActs.forEach(act => {
-      if (act.distance > 0 && act.moving_time > 0) {
-        const date = new Date(act.start_date).toDateString();
-        const pace = (act.moving_time / 60) / (act.distance / 1000); // pace in min/km
-        
-        if (!activityDates[date] || pace < activityDates[date]) {
-          activityDates[date] = pace; // Store fastest pace for the day
-        }
-      }
-    });
-
-    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    const now = new Date();
-    const year = now.getFullYear();
-
-    return months.map((month, monthIndex) => {
-      const daysInMonth = new Date(year, monthIndex + 1, 0).getDate();
-      const days = [];
+    // Get day of week for first day (0=Sunday, 1=Monday, etc.)
+    let startDayOfWeek = firstDay.getDay();
+    // Convert to Monday=0, Sunday=6
+    startDayOfWeek = startDayOfWeek === 0 ? 6 : startDayOfWeek - 1;
+    
+    const weeks = [];
+    let currentWeek = [];
+    
+    // Add empty cells for days before month starts
+    for (let i = 0; i < startDayOfWeek; i++) {
+      currentWeek.push({ date: null, intensity: '' });
+    }
+    
+    // Add all days of the month
+    for (let day = 1; day <= daysInMonth; day++) {
+      const date = new Date(year, monthIndex, day);
+      const dateStr = date.toDateString();
+      const pace = activityDates[dateStr];
       
-      for (let day = 1; day <= daysInMonth; day++) {
-        const date = new Date(year, monthIndex, day);
-        const dateStr = date.toDateString();
-        const pace = activityDates[dateStr];
-        
-        let intensity = '';
-        if (!pace) {
-          intensity = ''; // No run
-        } else if (pace < 4.5) {
-          intensity = 'darker'; // Very fast (< 4:30/km)
-        } else if (pace < 5.5) {
-          intensity = 'dark'; // Fast (4:30-5:30/km)
-        } else if (pace < 6.5) {
-          intensity = 'medium'; // Medium (5:30-6:30/km)
-        } else {
-          intensity = 'light'; // Slower (> 6:30/km)
-        }
-        
-        days.push({ date: day, intensity });
+      let intensity = '';
+      if (!pace) {
+        intensity = ''; // No run
+      } else if (pace < 4.5) {
+        intensity = 'darker'; // Very fast (< 4:30/km)
+      } else if (pace < 5.5) {
+        intensity = 'dark'; // Fast (4:30-5:30/km)
+      } else if (pace < 6.5) {
+        intensity = 'medium'; // Medium (5:30-6:30/km)
+      } else {
+        intensity = 'light'; // Slower (> 6:30/km)
       }
       
-      return { month, days };
-    });
-  };
+      currentWeek.push({ date: day, intensity });
+      
+      // If week is complete (7 days), start new week
+      if (currentWeek.length === 7) {
+        weeks.push(currentWeek);
+        currentWeek = [];
+      }
+    }
+    
+    // Add remaining days to last week
+    if (currentWeek.length > 0) {
+      while (currentWeek.length < 7) {
+        currentWeek.push({ date: null, intensity: '' });
+      }
+      weeks.push(currentWeek);
+    }
+    
+    return { month, weeks };
+  });
+};
 
   if (loading) {
     return (
