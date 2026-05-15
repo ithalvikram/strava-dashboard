@@ -352,84 +352,84 @@ export default function Home() {
     }
   };
 
-  // Generate consistency grid data based on PACE
+  // Generate consistency grid data based on PACE in Mon-Sun week format
   const generateConsistencyGrid = () => {
-  const filteredActs = getFilteredActivities();
-  const activityDates = {};
-  
-  // Group activities by date and get the fastest pace for that day
-  filteredActs.forEach(act => {
-    if (act.distance > 0 && act.moving_time > 0) {
-      const date = new Date(act.start_date).toDateString();
-      const pace = (act.moving_time / 60) / (act.distance / 1000); // pace in min/km
-      
-      if (!activityDates[date] || pace < activityDates[date]) {
-        activityDates[date] = pace; // Store fastest pace for the day
+    const filteredActs = getFilteredActivities();
+    const activityDates = {};
+    
+    // Group activities by date and get the fastest pace for that day
+    filteredActs.forEach(act => {
+      if (act.distance > 0 && act.moving_time > 0) {
+        const date = new Date(act.start_date).toDateString();
+        const pace = (act.moving_time / 60) / (act.distance / 1000); // pace in min/km
+        
+        if (!activityDates[date] || pace < activityDates[date]) {
+          activityDates[date] = pace; // Store fastest pace for the day
+        }
       }
-    }
-  });
+    });
 
-  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  const now = new Date();
-  const year = now.getFullYear();
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const now = new Date();
+    const year = now.getFullYear();
 
-  return months.map((month, monthIndex) => {
-    const firstDay = new Date(year, monthIndex, 1);
-    const lastDay = new Date(year, monthIndex + 1, 0);
-    const daysInMonth = lastDay.getDate();
-    
-    // Get day of week for first day (0=Sunday, 1=Monday, etc.)
-    let startDayOfWeek = firstDay.getDay();
-    // Convert to Monday=0, Sunday=6
-    startDayOfWeek = startDayOfWeek === 0 ? 6 : startDayOfWeek - 1;
-    
-    const weeks = [];
-    let currentWeek = [];
-    
-    // Add empty cells for days before month starts
-    for (let i = 0; i < startDayOfWeek; i++) {
-      currentWeek.push({ date: null, intensity: '' });
-    }
-    
-    // Add all days of the month
-    for (let day = 1; day <= daysInMonth; day++) {
-      const date = new Date(year, monthIndex, day);
-      const dateStr = date.toDateString();
-      const pace = activityDates[dateStr];
+    return months.map((month, monthIndex) => {
+      const firstDay = new Date(year, monthIndex, 1);
+      const lastDay = new Date(year, monthIndex + 1, 0);
+      const daysInMonth = lastDay.getDate();
       
-      let intensity = '';
-      if (!pace) {
-        intensity = ''; // No run
-      } else if (pace < 4.5) {
-        intensity = 'darker'; // Very fast (< 4:30/km)
-      } else if (pace < 5.5) {
-        intensity = 'dark'; // Fast (4:30-5:30/km)
-      } else if (pace < 6.5) {
-        intensity = 'medium'; // Medium (5:30-6:30/km)
-      } else {
-        intensity = 'light'; // Slower (> 6:30/km)
-      }
+      // Get day of week for first day (0=Sunday, 1=Monday, etc.)
+      let startDayOfWeek = firstDay.getDay();
+      // Convert to Monday=0, Sunday=6
+      startDayOfWeek = startDayOfWeek === 0 ? 6 : startDayOfWeek - 1;
       
-      currentWeek.push({ date: day, intensity });
+      const weeks = [];
+      let currentWeek = [];
       
-      // If week is complete (7 days), start new week
-      if (currentWeek.length === 7) {
-        weeks.push(currentWeek);
-        currentWeek = [];
-      }
-    }
-    
-    // Add remaining days to last week
-    if (currentWeek.length > 0) {
-      while (currentWeek.length < 7) {
+      // Add empty cells for days before month starts
+      for (let i = 0; i < startDayOfWeek; i++) {
         currentWeek.push({ date: null, intensity: '' });
       }
-      weeks.push(currentWeek);
-    }
-    
-    return { month, weeks };
-  });
-};
+      
+      // Add all days of the month
+      for (let day = 1; day <= daysInMonth; day++) {
+        const date = new Date(year, monthIndex, day);
+        const dateStr = date.toDateString();
+        const pace = activityDates[dateStr];
+        
+        let intensity = '';
+        if (!pace) {
+          intensity = ''; // No run
+        } else if (pace < 4.5) {
+          intensity = 'darker'; // Very fast (< 4:30/km)
+        } else if (pace < 5.5) {
+          intensity = 'dark'; // Fast (4:30-5:30/km)
+        } else if (pace < 6.5) {
+          intensity = 'medium'; // Medium (5:30-6:30/km)
+        } else {
+          intensity = 'light'; // Slower (> 6:30/km)
+        }
+        
+        currentWeek.push({ date: day, intensity });
+        
+        // If week is complete (7 days), start new week
+        if (currentWeek.length === 7) {
+          weeks.push(currentWeek);
+          currentWeek = [];
+        }
+      }
+      
+      // Add remaining days to last week
+      if (currentWeek.length > 0) {
+        while (currentWeek.length < 7) {
+          currentWeek.push({ date: null, intensity: '' });
+        }
+        weeks.push(currentWeek);
+      }
+      
+      return { month, weeks };
+    });
+  };
 
   if (loading) {
     return (
@@ -597,21 +597,33 @@ export default function Home() {
                 {consistencyData.map((monthData, idx) => (
                   <div key={idx} style={styles.monthCol}>
                     <div style={styles.monthLabel}>{monthData.month}</div>
-                    <div style={styles.daysGrid}>
-                      {monthData.days.map((day, dayIdx) => (
-                        <div 
-                          key={dayIdx} 
-                          style={{
-                            ...styles.dayCell,
-                            ...(day.intensity === 'light' && styles.dayCellLight),
-                            ...(day.intensity === 'medium' && styles.dayCellMedium),
-                            ...(day.intensity === 'dark' && styles.dayCellDark),
-                            ...(day.intensity === 'darker' && styles.dayCellDarker),
-                          }}
-                          title={`${monthData.month} ${day.date}`}
-                        />
-                      ))}
+                    <div style={styles.weekLabels}>
+                      <span style={styles.dayLabel}>M</span>
+                      <span style={styles.dayLabel}>T</span>
+                      <span style={styles.dayLabel}>W</span>
+                      <span style={styles.dayLabel}>T</span>
+                      <span style={styles.dayLabel}>F</span>
+                      <span style={styles.dayLabel}>S</span>
+                      <span style={styles.dayLabel}>S</span>
                     </div>
+                    {monthData.weeks.map((week, weekIdx) => (
+                      <div key={weekIdx} style={styles.weekRow}>
+                        {week.map((day, dayIdx) => (
+                          <div 
+                            key={dayIdx} 
+                            style={{
+                              ...styles.dayCell,
+                              ...(day.date === null && styles.dayCellEmpty),
+                              ...(day.intensity === 'light' && styles.dayCellLight),
+                              ...(day.intensity === 'medium' && styles.dayCellMedium),
+                              ...(day.intensity === 'dark' && styles.dayCellDark),
+                              ...(day.intensity === 'darker' && styles.dayCellDarker),
+                            }}
+                            title={day.date ? `${monthData.month} ${day.date}` : ''}
+                          />
+                        ))}
+                      </div>
+                    ))}
                   </div>
                 ))}
               </div>
@@ -1209,29 +1221,47 @@ const styles = {
   },
   monthsContainer: {
     display: 'flex',
-    gap: '24px',
+    gap: '32px',
     overflowX: 'auto',
     paddingBottom: '8px',
   },
   monthCol: {
-    minWidth: '80px',
+    minWidth: '140px',
   },
   monthLabel: {
-    fontSize: '12px',
-    color: '#6D6D78',
-    marginBottom: '8px',
+    fontSize: '14px',
+    fontWeight: '600',
+    color: '#242428',
+    marginBottom: '12px',
     textAlign: 'center',
   },
-  daysGrid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(5, 11px)',
-    gap: '3px',
+  weekLabels: {
+    display: 'flex',
+    gap: '5px',
+    marginBottom: '8px',
+    justifyContent: 'space-between',
+  },
+  dayLabel: {
+    fontSize: '10px',
+    color: '#6D6D78',
+    width: '17px',
+    textAlign: 'center',
+    fontWeight: '500',
+  },
+  weekRow: {
+    display: 'flex',
+    gap: '5px',
+    marginBottom: '5px',
   },
   dayCell: {
-    width: '11px',
-    height: '11px',
-    borderRadius: '2px',
+    width: '17px',
+    height: '17px',
+    borderRadius: '3px',
     background: '#E5E5E5',
+  },
+  dayCellEmpty: { 
+    background: 'transparent',
+    border: 'none',
   },
   dayCellLight: { background: '#FFC299' },
   dayCellMedium: { background: '#FF8547' },
