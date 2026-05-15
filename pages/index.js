@@ -815,8 +815,12 @@ export default function Home() {
                 </table>
               </div>
 
+              {/* Fastest Runs Section - 3 Tables */}
               <div style={styles.tableCard}>
                 <h4 style={styles.tableTitle}>Fastest Runs (All Time)</h4>
+                
+                {/* Fastest Half Marathons */}
+                <h5 style={styles.tableSubtitle}>Fastest Half Marathons (Top 3)</h5>
                 <table style={styles.runsTable}>
                   <thead>
                     <tr>
@@ -824,21 +828,22 @@ export default function Home() {
                       <th style={styles.runsTableHeader}>Date</th>
                       <th style={styles.runsTableHeader}>Name</th>
                       <th style={styles.runsTableHeader}>Distance</th>
+                      <th style={styles.runsTableHeader}>Time</th>
                       <th style={styles.runsTableHeader}>Pace</th>
                     </tr>
                   </thead>
                   <tbody>
                     {[...allRunActivities]
-                      .filter(a => a.distance > 0 && a.moving_time > 0)
-                      .sort((a, b) => {
-                        const paceA = (a.moving_time / 60) / (a.distance / 1000);
-                        const paceB = (b.moving_time / 60) / (b.distance / 1000);
-                        return paceA - paceB;
-                      })
-                      .slice(0, 10)
+                      .filter(a => a.distance >= 21000 && a.distance <= 21200 && a.moving_time > 0)
+                      .sort((a, b) => a.moving_time - b.moving_time)
+                      .slice(0, 3)
                       .map((activity, idx) => {
                         const date = new Date(activity.start_date);
                         const distance = (activity.distance / 1000).toFixed(2);
+                        const hours = Math.floor(activity.moving_time / 3600);
+                        const minutes = Math.floor((activity.moving_time % 3600) / 60);
+                        const seconds = activity.moving_time % 60;
+                        const time = `${hours}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
                         const pace = (activity.moving_time / 60) / (activity.distance / 1000);
                         const paceMin = Math.floor(pace);
                         const paceSec = Math.floor((pace - paceMin) * 60);
@@ -852,6 +857,97 @@ export default function Home() {
                               </a>
                             </td>
                             <td style={styles.runsTableCell}>{distance} km</td>
+                            <td style={styles.runsTableCell}>{time}</td>
+                            <td style={styles.runsTableCell}>{paceMin}:{paceSec.toString().padStart(2, '0')} /km</td>
+                          </tr>
+                        );
+                      })}
+                  </tbody>
+                </table>
+
+                {/* Fastest 10K */}
+                <h5 style={{...styles.tableSubtitle, marginTop: '32px'}}>Fastest 10K (Top 3)</h5>
+                <table style={styles.runsTable}>
+                  <thead>
+                    <tr>
+                      <th style={styles.runsTableHeader}>#</th>
+                      <th style={styles.runsTableHeader}>Date</th>
+                      <th style={styles.runsTableHeader}>Name</th>
+                      <th style={styles.runsTableHeader}>Distance</th>
+                      <th style={styles.runsTableHeader}>Time</th>
+                      <th style={styles.runsTableHeader}>Pace</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {[...allRunActivities]
+                      .filter(a => a.distance >= 9900 && a.distance <= 10100 && a.moving_time > 0)
+                      .sort((a, b) => a.moving_time - b.moving_time)
+                      .slice(0, 3)
+                      .map((activity, idx) => {
+                        const date = new Date(activity.start_date);
+                        const distance = (activity.distance / 1000).toFixed(2);
+                        const minutes = Math.floor(activity.moving_time / 60);
+                        const seconds = activity.moving_time % 60;
+                        const time = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+                        const pace = (activity.moving_time / 60) / (activity.distance / 1000);
+                        const paceMin = Math.floor(pace);
+                        const paceSec = Math.floor((pace - paceMin) * 60);
+                        return (
+                          <tr key={activity.id}>
+                            <td style={styles.runsTableCell}><span style={styles.rank}>{idx + 1}</span></td>
+                            <td style={styles.runsTableCell}>{date.toLocaleDateString()}</td>
+                            <td style={styles.runsTableCell}>
+                              <a href={`https://www.strava.com/activities/${activity.id}`} target="_blank" rel="noopener noreferrer" style={styles.link}>
+                                {activity.name}
+                              </a>
+                            </td>
+                            <td style={styles.runsTableCell}>{distance} km</td>
+                            <td style={styles.runsTableCell}>{time}</td>
+                            <td style={styles.runsTableCell}>{paceMin}:{paceSec.toString().padStart(2, '0')} /km</td>
+                          </tr>
+                        );
+                      })}
+                  </tbody>
+                </table>
+
+                {/* Fastest 5K */}
+                <h5 style={{...styles.tableSubtitle, marginTop: '32px'}}>Fastest 5K (Top 3)</h5>
+                <table style={styles.runsTable}>
+                  <thead>
+                    <tr>
+                      <th style={styles.runsTableHeader}>#</th>
+                      <th style={styles.runsTableHeader}>Date</th>
+                      <th style={styles.runsTableHeader}>Name</th>
+                      <th style={styles.runsTableHeader}>Distance</th>
+                      <th style={styles.runsTableHeader}>Time</th>
+                      <th style={styles.runsTableHeader}>Pace</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {[...allRunActivities]
+                      .filter(a => a.distance >= 4900 && a.distance <= 5100 && a.moving_time > 0)
+                      .sort((a, b) => a.moving_time - b.moving_time)
+                      .slice(0, 3)
+                      .map((activity, idx) => {
+                        const date = new Date(activity.start_date);
+                        const distance = (activity.distance / 1000).toFixed(2);
+                        const minutes = Math.floor(activity.moving_time / 60);
+                        const seconds = activity.moving_time % 60;
+                        const time = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+                        const pace = (activity.moving_time / 60) / (activity.distance / 1000);
+                        const paceMin = Math.floor(pace);
+                        const paceSec = Math.floor((pace - paceMin) * 60);
+                        return (
+                          <tr key={activity.id}>
+                            <td style={styles.runsTableCell}><span style={styles.rank}>{idx + 1}</span></td>
+                            <td style={styles.runsTableCell}>{date.toLocaleDateString()}</td>
+                            <td style={styles.runsTableCell}>
+                              <a href={`https://www.strava.com/activities/${activity.id}`} target="_blank" rel="noopener noreferrer" style={styles.link}>
+                                {activity.name}
+                              </a>
+                            </td>
+                            <td style={styles.runsTableCell}>{distance} km</td>
+                            <td style={styles.runsTableCell}>{time}</td>
                             <td style={styles.runsTableCell}>{paceMin}:{paceSec.toString().padStart(2, '0')} /km</td>
                           </tr>
                         );
@@ -1377,6 +1473,13 @@ const styles = {
     fontWeight: '500',
     color: '#242428',
     marginBottom: '20px',
+  },
+  tableSubtitle: {
+    fontSize: '14px',
+    fontWeight: '500',
+    color: '#639922',
+    marginBottom: '12px',
+    marginTop: '0',
   },
   runsTable: {
     width: '100%',
