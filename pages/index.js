@@ -542,11 +542,11 @@ export default function Home() {
             </div>
 
             <h3 style={styles.prHeading}>Personal Records</h3>
-            <div style={styles.prGrid}>
-              <PRCard label="5K PR" time="18:45" pace="3:45 /km" />
-              <PRCard label="10K PR" time="38:32" pace="3:51 /km" />
-              <PRCard label="Half Marathon PR" time="1:24:18" pace="3:59 /km" />
-            </div>
+<div style={styles.prGrid}>
+  <PRCard label="5K PR" time={calculate5KPR(filteredActivities).time} pace={calculate5KPR(filteredActivities).pace} />
+  <PRCard label="10K PR" time={calculate10KPR(filteredActivities).time} pace={calculate10KPR(filteredActivities).pace} />
+  <PRCard label="Half Marathon PR" time={calculateHalfMarathonPR(filteredActivities).time} pace={calculateHalfMarathonPR(filteredActivities).pace} />
+</div>
 
             {/* Consistency Grid */}
             <div style={styles.consistencyCard}>
@@ -958,7 +958,72 @@ function calculateAveragePace(activities) {
   const sec = Math.floor((avgPace - min) * 60);
   return `${min}:${sec.toString().padStart(2, '0')} /km`;
 }
+function calculate5KPR(activities) {
+  const fiveKRuns = activities.filter(a => a.distance >= 4900 && a.distance <= 5100 && a.moving_time > 0);
+  if (fiveKRuns.length === 0) return { time: '--:--', pace: '--:-- /km' };
+  
+  const fastest = fiveKRuns.reduce((best, current) => {
+    const currentTime = current.moving_time;
+    const bestTime = best.moving_time;
+    return currentTime < bestTime ? current : best;
+  });
+  
+  const minutes = Math.floor(fastest.moving_time / 60);
+  const seconds = fastest.moving_time % 60;
+  const time = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+  
+  const paceMinPerKm = (fastest.moving_time / 60) / (fastest.distance / 1000);
+  const paceMin = Math.floor(paceMinPerKm);
+  const paceSec = Math.floor((paceMinPerKm - paceMin) * 60);
+  const pace = `${paceMin}:${paceSec.toString().padStart(2, '0')} /km`;
+  
+  return { time, pace };
+}
 
+function calculate10KPR(activities) {
+  const tenKRuns = activities.filter(a => a.distance >= 9900 && a.distance <= 10100 && a.moving_time > 0);
+  if (tenKRuns.length === 0) return { time: '--:--', pace: '--:-- /km' };
+  
+  const fastest = tenKRuns.reduce((best, current) => {
+    const currentTime = current.moving_time;
+    const bestTime = best.moving_time;
+    return currentTime < bestTime ? current : best;
+  });
+  
+  const minutes = Math.floor(fastest.moving_time / 60);
+  const seconds = fastest.moving_time % 60;
+  const time = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+  
+  const paceMinPerKm = (fastest.moving_time / 60) / (fastest.distance / 1000);
+  const paceMin = Math.floor(paceMinPerKm);
+  const paceSec = Math.floor((paceMinPerKm - paceMin) * 60);
+  const pace = `${paceMin}:${paceSec.toString().padStart(2, '0')} /km`;
+  
+  return { time, pace };
+}
+
+function calculateHalfMarathonPR(activities) {
+  const halfMarathonRuns = activities.filter(a => a.distance >= 21000 && a.distance <= 21200 && a.moving_time > 0);
+  if (halfMarathonRuns.length === 0) return { time: '--:--:--', pace: '--:-- /km' };
+  
+  const fastest = halfMarathonRuns.reduce((best, current) => {
+    const currentTime = current.moving_time;
+    const bestTime = best.moving_time;
+    return currentTime < bestTime ? current : best;
+  });
+  
+  const hours = Math.floor(fastest.moving_time / 3600);
+  const minutes = Math.floor((fastest.moving_time % 3600) / 60);
+  const seconds = fastest.moving_time % 60;
+  const time = `${hours}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+  
+  const paceMinPerKm = (fastest.moving_time / 60) / (fastest.distance / 1000);
+  const paceMin = Math.floor(paceMinPerKm);
+  const paceSec = Math.floor((paceMinPerKm - paceMin) * 60);
+  const pace = `${paceMin}:${paceSec.toString().padStart(2, '0')} /km`;
+  
+  return { time, pace };
+}
 // Components
 function MetricCard({ label, value }) {
   return (
