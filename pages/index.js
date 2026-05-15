@@ -13,7 +13,9 @@ export default function Home() {
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [chartsInitialized, setChartsInitialized] = useState(false);
-  const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
+  const [monthlyChartYear, setMonthlyChartYear] = useState(new Date().getFullYear());
+  const [distChartYear, setDistChartYear] = useState(new Date().getFullYear());
+  const [paceChartYear, setPaceChartYear] = useState(new Date().getFullYear());
 
   useEffect(() => {
     checkAuth();
@@ -146,7 +148,7 @@ export default function Home() {
     if (chartsInitialized && activeTab === 'gear' && activities.length > 0) {
       setTimeout(() => initializeGearCharts(), 100);
     }
-  }, [chartsInitialized, activeTab, activities, timeFilter, selectedYear]);
+  }, [chartsInitialized, activeTab, activities, monthlyChartYear, distChartYear, paceChartYear]);
 
   const initializeRunCharts = () => {
     if (typeof window === 'undefined' || !window.Chart) return;
@@ -163,7 +165,7 @@ export default function Home() {
       const monthlyData = Array(12).fill(0);
       allRunActivities.forEach(act => {
         const actDate = new Date(act.start_date);
-        if (actDate.getFullYear() === selectedYear) {
+        if (actDate.getFullYear() === monthlyChartYear) {
           const month = actDate.getMonth();
           monthlyData[month] += act.distance / 1000;
         }
@@ -184,14 +186,7 @@ export default function Home() {
           responsive: true,
           maintainAspectRatio: true,
           plugins: { 
-            legend: { display: false },
-            datalabels: {
-              display: true,
-              color: '#242428',
-              anchor: 'end',
-              align: 'top',
-              formatter: (value) => value > 0 ? Math.round(value) : ''
-            }
+            legend: { display: false }
           },
           scales: {
             y: { beginAtZero: true }
@@ -217,7 +212,7 @@ export default function Home() {
       });
     }
 
-    // Yearly Distance Chart - VERTICAL bars from beginning to current year
+    // Yearly Distance Chart - ALL years from 2015 to current
     const yearlyCanvas = document.getElementById('yearlyChart');
     if (yearlyCanvas) {
       const yearlyCtx = yearlyCanvas.getContext('2d');
@@ -271,20 +266,24 @@ export default function Home() {
       });
     }
 
-    // Distance Distribution
+    // Distance Distribution - for selected year only
     const distCanvas = document.getElementById('distanceDistChart');
     if (distCanvas) {
       const distCtx = distCanvas.getContext('2d');
       if (window.distChartInstance) window.distChartInstance.destroy();
 
       const bins = [0, 0, 0, 0, 0]; // 0-5, 6-10, 11-15, 16-20, 21+
-      filteredActs.forEach(act => {
-        const km = act.distance / 1000;
-        if (km <= 5) bins[0]++;
-        else if (km <= 10) bins[1]++;
-        else if (km <= 15) bins[2]++;
-        else if (km <= 20) bins[3]++;
-        else bins[4]++;
+      
+      allRunActivities.forEach(act => {
+        const actDate = new Date(act.start_date);
+        if (actDate.getFullYear() === distChartYear) {
+          const km = act.distance / 1000;
+          if (km <= 5) bins[0]++;
+          else if (km <= 10) bins[1]++;
+          else if (km <= 15) bins[2]++;
+          else if (km <= 20) bins[3]++;
+          else bins[4]++;
+        }
       });
 
       window.distChartInstance = new window.Chart(distCtx, {
@@ -309,7 +308,7 @@ export default function Home() {
       });
     }
 
-    // Pace Distribution
+    // Pace Distribution - for selected year only
     const paceCanvas = document.getElementById('paceDistChart');
     if (paceCanvas) {
       const paceCtx = paceCanvas.getContext('2d');
@@ -318,17 +317,20 @@ export default function Home() {
       const paceBins = Array(9).fill(0);
       const paceLabels = ['<4:00', '4:00-4:30', '4:30-5:00', '5:00-5:30', '5:30-6:00', '6:00-6:30', '6:30-7:00', '7:00-7:30', '>7:30'];
       
-      filteredActs.filter(a => a.distance > 0 && a.moving_time > 0).forEach(act => {
-        const paceMin = (act.moving_time / 60) / (act.distance / 1000);
-        if (paceMin < 4) paceBins[0]++;
-        else if (paceMin < 4.5) paceBins[1]++;
-        else if (paceMin < 5) paceBins[2]++;
-        else if (paceMin < 5.5) paceBins[3]++;
-        else if (paceMin < 6) paceBins[4]++;
-        else if (paceMin < 6.5) paceBins[5]++;
-        else if (paceMin < 7) paceBins[6]++;
-        else if (paceMin < 7.5) paceBins[7]++;
-        else paceBins[8]++;
+      allRunActivities.filter(a => a.distance > 0 && a.moving_time > 0).forEach(act => {
+        const actDate = new Date(act.start_date);
+        if (actDate.getFullYear() === paceChartYear) {
+          const paceMin = (act.moving_time / 60) / (act.distance / 1000);
+          if (paceMin < 4) paceBins[0]++;
+          else if (paceMin < 4.5) paceBins[1]++;
+          else if (paceMin < 5) paceBins[2]++;
+          else if (paceMin < 5.5) paceBins[3]++;
+          else if (paceMin < 6) paceBins[4]++;
+          else if (paceMin < 6.5) paceBins[5]++;
+          else if (paceMin < 7) paceBins[6]++;
+          else if (paceMin < 7.5) paceBins[7]++;
+          else paceBins[8]++;
+        }
       });
 
       window.paceChartInstance = new window.Chart(paceCtx, {
@@ -511,6 +513,7 @@ export default function Home() {
   }
 
   const filteredActivities = getFilteredActivities();
+  const allRunActivities = activities.filter(a => a.type === 'Run'); // For all-time top 10 tables
   const totalRuns = filteredActivities.length;
   const totalDistance = (filteredActivities.reduce((sum, a) => sum + a.distance, 0) / 1000).toFixed(0);
   const totalElevation = filteredActivities.reduce((sum, a) => sum + (a.total_elevation_gain || 0), 0).toFixed(0);
@@ -691,8 +694,8 @@ export default function Home() {
                   <h3 style={styles.chartTitle}>Monthly Distance</h3>
                   <select 
                     style={styles.yearDropdown}
-                    value={selectedYear}
-                    onChange={(e) => setSelectedYear(parseInt(e.target.value))}
+                    value={monthlyChartYear}
+                    onChange={(e) => setMonthlyChartYear(parseInt(e.target.value))}
                   >
                     {availableYears.map(year => (
                       <option key={year} value={year}>{year}</option>
@@ -709,19 +712,41 @@ export default function Home() {
 
             <div style={styles.chartsGrid}>
               <div style={styles.chartCard}>
-                <h3 style={styles.chartTitle}>Distance Distribution</h3>
+                <div style={styles.chartHeader}>
+                  <h3 style={styles.chartTitle}>Distance Distribution</h3>
+                  <select 
+                    style={styles.yearDropdown}
+                    value={distChartYear}
+                    onChange={(e) => setDistChartYear(parseInt(e.target.value))}
+                  >
+                    {availableYears.map(year => (
+                      <option key={year} value={year}>{year}</option>
+                    ))}
+                  </select>
+                </div>
                 <canvas id="distanceDistChart"></canvas>
               </div>
               <div style={styles.chartCard}>
-                <h3 style={styles.chartTitle}>Pace Distribution</h3>
+                <div style={styles.chartHeader}>
+                  <h3 style={styles.chartTitle}>Pace Distribution</h3>
+                  <select 
+                    style={styles.yearDropdown}
+                    value={paceChartYear}
+                    onChange={(e) => setPaceChartYear(parseInt(e.target.value))}
+                  >
+                    {availableYears.map(year => (
+                      <option key={year} value={year}>{year}</option>
+                    ))}
+                  </select>
+                </div>
                 <canvas id="paceDistChart"></canvas>
               </div>
             </div>
 
-            {/* Top 10 Tables */}
+            {/* Top 10 Tables - ALL TIME */}
             <div style={styles.topTablesGrid}>
               <div style={styles.tableCard}>
-                <h4 style={styles.tableTitle}>Longest Runs</h4>
+                <h4 style={styles.tableTitle}>Longest Runs (All Time)</h4>
                 <table style={styles.runsTable}>
                   <thead>
                     <tr>
@@ -732,7 +757,7 @@ export default function Home() {
                     </tr>
                   </thead>
                   <tbody>
-                    {[...filteredActivities]
+                    {[...allRunActivities]
                       .sort((a, b) => b.distance - a.distance)
                       .slice(0, 10)
                       .map((activity, idx) => {
@@ -756,7 +781,7 @@ export default function Home() {
               </div>
 
               <div style={styles.tableCard}>
-                <h4 style={styles.tableTitle}>Most Elevated Runs</h4>
+                <h4 style={styles.tableTitle}>Most Elevated Runs (All Time)</h4>
                 <table style={styles.runsTable}>
                   <thead>
                     <tr>
@@ -767,7 +792,7 @@ export default function Home() {
                     </tr>
                   </thead>
                   <tbody>
-                    {[...filteredActivities]
+                    {[...allRunActivities]
                       .sort((a, b) => (b.total_elevation_gain || 0) - (a.total_elevation_gain || 0))
                       .slice(0, 10)
                       .map((activity, idx) => {
@@ -791,7 +816,7 @@ export default function Home() {
               </div>
 
               <div style={styles.tableCard}>
-                <h4 style={styles.tableTitle}>Fastest Runs</h4>
+                <h4 style={styles.tableTitle}>Fastest Runs (All Time)</h4>
                 <table style={styles.runsTable}>
                   <thead>
                     <tr>
@@ -803,7 +828,7 @@ export default function Home() {
                     </tr>
                   </thead>
                   <tbody>
-                    {[...filteredActivities]
+                    {[...allRunActivities]
                       .filter(a => a.distance > 0 && a.moving_time > 0)
                       .sort((a, b) => {
                         const paceA = (a.moving_time / 60) / (a.distance / 1000);
