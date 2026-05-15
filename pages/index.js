@@ -543,9 +543,9 @@ export default function Home() {
 
             <h3 style={styles.prHeading}>Personal Records</h3>
 <div style={styles.prGrid}>
-  <PRCard label="5K PR" time={calculate5KPR(filteredActivities).time} pace={calculate5KPR(filteredActivities).pace} />
-  <PRCard label="10K PR" time={calculate10KPR(filteredActivities).time} pace={calculate10KPR(filteredActivities).pace} />
-  <PRCard label="Half Marathon PR" time={calculateHalfMarathonPR(filteredActivities).time} pace={calculateHalfMarathonPR(filteredActivities).pace} />
+<PRCard label="5K PR" time="19:28" pace="3:54 /km" />
+<PRCard label="10K PR" time="41:52" pace="4:11 /km" />
+<PRCard label="Half Marathon PR" time="1:41:22" pace="4:47 /km" />
 </div>
 
             {/* Consistency Grid */}
