@@ -352,14 +352,21 @@ export default function Home() {
     }
   };
 
-  // Generate consistency grid data
+  // Generate consistency grid data based on PACE
   const generateConsistencyGrid = () => {
     const filteredActs = getFilteredActivities();
     const activityDates = {};
     
+    // Group activities by date and get the fastest pace for that day
     filteredActs.forEach(act => {
-      const date = new Date(act.start_date).toDateString();
-      activityDates[date] = (activityDates[date] || 0) + 1;
+      if (act.distance > 0 && act.moving_time > 0) {
+        const date = new Date(act.start_date).toDateString();
+        const pace = (act.moving_time / 60) / (act.distance / 1000); // pace in min/km
+        
+        if (!activityDates[date] || pace < activityDates[date]) {
+          activityDates[date] = pace; // Store fastest pace for the day
+        }
+      }
     });
 
     const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -373,14 +380,20 @@ export default function Home() {
       for (let day = 1; day <= daysInMonth; day++) {
         const date = new Date(year, monthIndex, day);
         const dateStr = date.toDateString();
-        const count = activityDates[dateStr] || 0;
+        const pace = activityDates[dateStr];
         
         let intensity = '';
-        if (count === 0) intensity = '';
-        else if (count === 1) intensity = 'light';
-        else if (count === 2) intensity = 'medium';
-        else if (count === 3) intensity = 'dark';
-        else intensity = 'darker';
+        if (!pace) {
+          intensity = ''; // No run
+        } else if (pace < 4.5) {
+          intensity = 'darker'; // Very fast (< 4:30/km)
+        } else if (pace < 5.5) {
+          intensity = 'dark'; // Fast (4:30-5:30/km)
+        } else if (pace < 6.5) {
+          intensity = 'medium'; // Medium (5:30-6:30/km)
+        } else {
+          intensity = 'light'; // Slower (> 6:30/km)
+        }
         
         days.push({ date: day, intensity });
       }
@@ -542,11 +555,11 @@ export default function Home() {
             </div>
 
             <h3 style={styles.prHeading}>Personal Records</h3>
-<div style={styles.prGrid}>
-<PRCard label="5K PR" time="19:28" pace="3:54 /km" />
-<PRCard label="10K PR" time="41:52" pace="4:11 /km" />
-<PRCard label="Half Marathon PR" time="1:41:22" pace="4:47 /km" />
-</div>
+            <div style={styles.prGrid}>
+              <PRCard label="5K PR" time="19:28" pace="3:54 /km" date="24 Sep 2019" />
+              <PRCard label="10K PR" time="41:52" pace="4:11 /km" date="9 Oct 2019" />
+              <PRCard label="Half Marathon PR" time="1:41:22" pace="4:47 /km" date="6 Mar 2018" />
+            </div>
 
             {/* Consistency Grid */}
             <div style={styles.consistencyCard}>
@@ -958,72 +971,7 @@ function calculateAveragePace(activities) {
   const sec = Math.floor((avgPace - min) * 60);
   return `${min}:${sec.toString().padStart(2, '0')} /km`;
 }
-function calculate5KPR(activities) {
-  const fiveKRuns = activities.filter(a => a.distance >= 4900 && a.distance <= 5100 && a.moving_time > 0);
-  if (fiveKRuns.length === 0) return { time: '--:--', pace: '--:-- /km' };
-  
-  const fastest = fiveKRuns.reduce((best, current) => {
-    const currentTime = current.moving_time;
-    const bestTime = best.moving_time;
-    return currentTime < bestTime ? current : best;
-  });
-  
-  const minutes = Math.floor(fastest.moving_time / 60);
-  const seconds = fastest.moving_time % 60;
-  const time = `${minutes}:${seconds.toString().padStart(2, '0')}`;
-  
-  const paceMinPerKm = (fastest.moving_time / 60) / (fastest.distance / 1000);
-  const paceMin = Math.floor(paceMinPerKm);
-  const paceSec = Math.floor((paceMinPerKm - paceMin) * 60);
-  const pace = `${paceMin}:${paceSec.toString().padStart(2, '0')} /km`;
-  
-  return { time, pace };
-}
 
-function calculate10KPR(activities) {
-  const tenKRuns = activities.filter(a => a.distance >= 9900 && a.distance <= 10100 && a.moving_time > 0);
-  if (tenKRuns.length === 0) return { time: '--:--', pace: '--:-- /km' };
-  
-  const fastest = tenKRuns.reduce((best, current) => {
-    const currentTime = current.moving_time;
-    const bestTime = best.moving_time;
-    return currentTime < bestTime ? current : best;
-  });
-  
-  const minutes = Math.floor(fastest.moving_time / 60);
-  const seconds = fastest.moving_time % 60;
-  const time = `${minutes}:${seconds.toString().padStart(2, '0')}`;
-  
-  const paceMinPerKm = (fastest.moving_time / 60) / (fastest.distance / 1000);
-  const paceMin = Math.floor(paceMinPerKm);
-  const paceSec = Math.floor((paceMinPerKm - paceMin) * 60);
-  const pace = `${paceMin}:${paceSec.toString().padStart(2, '0')} /km`;
-  
-  return { time, pace };
-}
-
-function calculateHalfMarathonPR(activities) {
-  const halfMarathonRuns = activities.filter(a => a.distance >= 21000 && a.distance <= 21200 && a.moving_time > 0);
-  if (halfMarathonRuns.length === 0) return { time: '--:--:--', pace: '--:-- /km' };
-  
-  const fastest = halfMarathonRuns.reduce((best, current) => {
-    const currentTime = current.moving_time;
-    const bestTime = best.moving_time;
-    return currentTime < bestTime ? current : best;
-  });
-  
-  const hours = Math.floor(fastest.moving_time / 3600);
-  const minutes = Math.floor((fastest.moving_time % 3600) / 60);
-  const seconds = fastest.moving_time % 60;
-  const time = `${hours}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
-  
-  const paceMinPerKm = (fastest.moving_time / 60) / (fastest.distance / 1000);
-  const paceMin = Math.floor(paceMinPerKm);
-  const paceSec = Math.floor((paceMinPerKm - paceMin) * 60);
-  const pace = `${paceMin}:${paceSec.toString().padStart(2, '0')} /km`;
-  
-  return { time, pace };
-}
 // Components
 function MetricCard({ label, value }) {
   return (
@@ -1034,12 +982,13 @@ function MetricCard({ label, value }) {
   );
 }
 
-function PRCard({ label, time, pace }) {
+function PRCard({ label, time, pace, date }) {
   return (
     <div style={styles.prCard}>
       <div style={styles.metricLabel}>{label}</div>
       <div style={{...styles.metricValue, fontSize: '28px'}}>{time}</div>
       <div style={styles.metricSubtext}>{pace}</div>
+      {date && <div style={{...styles.metricSubtext, marginTop: '4px', fontSize: '11px', color: '#999'}}>{date}</div>}
     </div>
   );
 }
