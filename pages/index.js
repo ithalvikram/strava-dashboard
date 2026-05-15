@@ -13,6 +13,7 @@ export default function Home() {
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [chartsInitialized, setChartsInitialized] = useState(false);
+  const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
 
   useEffect(() => {
     checkAuth();
@@ -70,6 +71,13 @@ export default function Home() {
     if (startDate && endDate) {
       setTimeFilter('custom');
     }
+  };
+
+  // Get available years from activities
+  const getAvailableYears = () => {
+    const runActivities = activities.filter(a => a.type === 'Run');
+    const years = [...new Set(runActivities.map(a => new Date(a.start_date).getFullYear()))];
+    return years.sort((a, b) => b - a);
   };
 
   // Filter activities based on time range
@@ -138,23 +146,27 @@ export default function Home() {
     if (chartsInitialized && activeTab === 'gear' && activities.length > 0) {
       setTimeout(() => initializeGearCharts(), 100);
     }
-  }, [chartsInitialized, activeTab, activities, timeFilter]);
+  }, [chartsInitialized, activeTab, activities, timeFilter, selectedYear]);
 
   const initializeRunCharts = () => {
     if (typeof window === 'undefined' || !window.Chart) return;
 
     const filteredActs = getFilteredActivities();
+    const allRunActivities = activities.filter(a => a.type === 'Run');
     
-    // Monthly Distance Chart
+    // Monthly Distance Chart - for selected year only
     const monthlyCanvas = document.getElementById('monthlyChart');
     if (monthlyCanvas) {
       const monthlyCtx = monthlyCanvas.getContext('2d');
       if (window.monthlyChartInstance) window.monthlyChartInstance.destroy();
       
       const monthlyData = Array(12).fill(0);
-      filteredActs.forEach(act => {
-        const month = new Date(act.start_date).getMonth();
-        monthlyData[month] += act.distance / 1000;
+      allRunActivities.forEach(act => {
+        const actDate = new Date(act.start_date);
+        if (actDate.getFullYear() === selectedYear) {
+          const month = actDate.getMonth();
+          monthlyData[month] += act.distance / 1000;
+        }
       });
 
       window.monthlyChartInstance = new window.Chart(monthlyCtx, {
@@ -163,7 +175,7 @@ export default function Home() {
           labels: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'],
           datasets: [{
             label: 'Distance (km)',
-            data: monthlyData.map(d => d.toFixed(1)),
+            data: monthlyData,
             backgroundColor: '#FC4C02',
             borderRadius: 4
           }]
@@ -171,28 +183,54 @@ export default function Home() {
         options: {
           responsive: true,
           maintainAspectRatio: true,
-          plugins: { legend: { display: false } },
+          plugins: { 
+            legend: { display: false },
+            datalabels: {
+              display: true,
+              color: '#242428',
+              anchor: 'end',
+              align: 'top',
+              formatter: (value) => value > 0 ? Math.round(value) : ''
+            }
+          },
           scales: {
             y: { beginAtZero: true }
           }
-        }
+        },
+        plugins: [{
+          afterDatasetsDraw: function(chart) {
+            const ctx = chart.ctx;
+            chart.data.datasets.forEach((dataset, i) => {
+              const meta = chart.getDatasetMeta(i);
+              meta.data.forEach((bar, index) => {
+                const data = dataset.data[index];
+                if (data > 0) {
+                  ctx.fillStyle = '#242428';
+                  ctx.font = 'bold 11px sans-serif';
+                  ctx.textAlign = 'center';
+                  ctx.fillText(Math.round(data), bar.x, bar.y - 5);
+                }
+              });
+            });
+          }
+        }]
       });
     }
 
-    // Yearly Distance Chart
+    // Yearly Distance Chart - VERTICAL bars from beginning to current year
     const yearlyCanvas = document.getElementById('yearlyChart');
     if (yearlyCanvas) {
       const yearlyCtx = yearlyCanvas.getContext('2d');
       if (window.yearlyChartInstance) window.yearlyChartInstance.destroy();
 
       const yearlyData = {};
-      activities.filter(a => a.type === 'Run').forEach(act => {
+      allRunActivities.forEach(act => {
         const year = new Date(act.start_date).getFullYear();
         yearlyData[year] = (yearlyData[year] || 0) + (act.distance / 1000);
       });
 
       const years = Object.keys(yearlyData).sort();
-      const distances = years.map(y => yearlyData[y].toFixed(0));
+      const distances = years.map(y => yearlyData[y]);
 
       window.yearlyChartInstance = new window.Chart(yearlyCtx, {
         type: 'bar',
@@ -206,14 +244,30 @@ export default function Home() {
           }]
         },
         options: {
-          indexAxis: 'y',
           responsive: true,
           maintainAspectRatio: true,
-          plugins: { legend: { display: false } },
+          plugins: { 
+            legend: { display: false }
+          },
           scales: {
-            x: { beginAtZero: true }
+            y: { beginAtZero: true }
           }
-        }
+        },
+        plugins: [{
+          afterDatasetsDraw: function(chart) {
+            const ctx = chart.ctx;
+            chart.data.datasets.forEach((dataset, i) => {
+              const meta = chart.getDatasetMeta(i);
+              meta.data.forEach((bar, index) => {
+                const data = dataset.data[index];
+                ctx.fillStyle = '#242428';
+                ctx.font = 'bold 11px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText(Math.round(data), bar.x, bar.y - 5);
+              });
+            });
+          }
+        }]
       });
     }
 
@@ -463,6 +517,7 @@ export default function Home() {
   const avgPace = calculateAveragePace(filteredActivities);
 
   const consistencyData = generateConsistencyGrid();
+  const availableYears = getAvailableYears();
 
   return (
     <div style={styles.container}>
@@ -632,7 +687,18 @@ export default function Home() {
             {/* Charts */}
             <div style={styles.chartsGrid}>
               <div style={styles.chartCard}>
-                <h3 style={styles.chartTitle}>Monthly Distance</h3>
+                <div style={styles.chartHeader}>
+                  <h3 style={styles.chartTitle}>Monthly Distance</h3>
+                  <select 
+                    style={styles.yearDropdown}
+                    value={selectedYear}
+                    onChange={(e) => setSelectedYear(parseInt(e.target.value))}
+                  >
+                    {availableYears.map(year => (
+                      <option key={year} value={year}>{year}</option>
+                    ))}
+                  </select>
+                </div>
                 <canvas id="monthlyChart"></canvas>
               </div>
               <div style={styles.chartCard}>
@@ -661,6 +727,7 @@ export default function Home() {
                     <tr>
                       <th style={styles.runsTableHeader}>#</th>
                       <th style={styles.runsTableHeader}>Date</th>
+                      <th style={styles.runsTableHeader}>Name</th>
                       <th style={styles.runsTableHeader}>Distance</th>
                     </tr>
                   </thead>
@@ -674,9 +741,10 @@ export default function Home() {
                         return (
                           <tr key={activity.id}>
                             <td style={styles.runsTableCell}><span style={styles.rank}>{idx + 1}</span></td>
+                            <td style={styles.runsTableCell}>{date.toLocaleDateString()}</td>
                             <td style={styles.runsTableCell}>
                               <a href={`https://www.strava.com/activities/${activity.id}`} target="_blank" rel="noopener noreferrer" style={styles.link}>
-                                {date.toLocaleDateString()}
+                                {activity.name}
                               </a>
                             </td>
                             <td style={styles.runsTableCell}>{distance} km</td>
@@ -694,6 +762,7 @@ export default function Home() {
                     <tr>
                       <th style={styles.runsTableHeader}>#</th>
                       <th style={styles.runsTableHeader}>Date</th>
+                      <th style={styles.runsTableHeader}>Name</th>
                       <th style={styles.runsTableHeader}>Elevation</th>
                     </tr>
                   </thead>
@@ -707,9 +776,10 @@ export default function Home() {
                         return (
                           <tr key={activity.id}>
                             <td style={styles.runsTableCell}><span style={styles.rank}>{idx + 1}</span></td>
+                            <td style={styles.runsTableCell}>{date.toLocaleDateString()}</td>
                             <td style={styles.runsTableCell}>
                               <a href={`https://www.strava.com/activities/${activity.id}`} target="_blank" rel="noopener noreferrer" style={styles.link}>
-                                {date.toLocaleDateString()}
+                                {activity.name}
                               </a>
                             </td>
                             <td style={styles.runsTableCell}>{elevation} m</td>
@@ -727,6 +797,8 @@ export default function Home() {
                     <tr>
                       <th style={styles.runsTableHeader}>#</th>
                       <th style={styles.runsTableHeader}>Date</th>
+                      <th style={styles.runsTableHeader}>Name</th>
+                      <th style={styles.runsTableHeader}>Distance</th>
                       <th style={styles.runsTableHeader}>Pace</th>
                     </tr>
                   </thead>
@@ -741,63 +813,24 @@ export default function Home() {
                       .slice(0, 10)
                       .map((activity, idx) => {
                         const date = new Date(activity.start_date);
+                        const distance = (activity.distance / 1000).toFixed(2);
                         const pace = (activity.moving_time / 60) / (activity.distance / 1000);
                         const paceMin = Math.floor(pace);
                         const paceSec = Math.floor((pace - paceMin) * 60);
                         return (
                           <tr key={activity.id}>
                             <td style={styles.runsTableCell}><span style={styles.rank}>{idx + 1}</span></td>
+                            <td style={styles.runsTableCell}>{date.toLocaleDateString()}</td>
                             <td style={styles.runsTableCell}>
                               <a href={`https://www.strava.com/activities/${activity.id}`} target="_blank" rel="noopener noreferrer" style={styles.link}>
-                                {date.toLocaleDateString()}
+                                {activity.name}
                               </a>
                             </td>
+                            <td style={styles.runsTableCell}>{distance} km</td>
                             <td style={styles.runsTableCell}>{paceMin}:{paceSec.toString().padStart(2, '0')} /km</td>
                           </tr>
                         );
                       })}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-
-            {/* Recent Activities */}
-            <div style={styles.tableCard}>
-              <h3 style={styles.tableTitle}>Recent Activities</h3>
-              <div style={{overflowX: 'auto'}}>
-                <table style={styles.table}>
-                  <thead>
-                    <tr style={styles.tableHeaderRow}>
-                      <th style={styles.tableHeader}>Date</th>
-                      <th style={styles.tableHeader}>Name</th>
-                      <th style={styles.tableHeader}>Distance</th>
-                      <th style={styles.tableHeader}>Duration</th>
-                      <th style={styles.tableHeader}>Pace</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredActivities.slice(0, 20).map((activity) => {
-                      const date = new Date(activity.start_date);
-                      const distance = (activity.distance / 1000).toFixed(2);
-                      const duration = Math.floor(activity.moving_time / 60);
-                      const pace = activity.distance > 0 ? (activity.moving_time / 60) / (activity.distance / 1000) : 0;
-                      const paceMin = Math.floor(pace);
-                      const paceSec = Math.floor((pace - paceMin) * 60);
-                      
-                      return (
-                        <tr key={activity.id} style={styles.tableRow}>
-                          <td style={styles.tableCell}>{date.toLocaleDateString()}</td>
-                          <td style={styles.tableCell}>
-                            <a href={`https://www.strava.com/activities/${activity.id}`} target="_blank" rel="noopener noreferrer" style={styles.link}>
-                              {activity.name}
-                            </a>
-                          </td>
-                          <td style={styles.tableCell}>{distance} km</td>
-                          <td style={styles.tableCell}>{duration} min</td>
-                          <td style={styles.tableCell}>{paceMin}:{paceSec.toString().padStart(2, '0')} /km</td>
-                        </tr>
-                      );
-                    })}
                   </tbody>
                 </table>
               </div>
@@ -1279,11 +1312,27 @@ const styles = {
     borderRadius: '8px',
     padding: '24px',
   },
+  chartHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: '24px',
+  },
   chartTitle: {
     fontSize: '16px',
     fontWeight: '500',
     color: '#242428',
-    margin: '0 0 24px 0',
+    margin: 0,
+  },
+  yearDropdown: {
+    padding: '6px 12px',
+    borderRadius: '6px',
+    border: '1px solid #E5E5E5',
+    background: 'white',
+    color: '#242428',
+    fontSize: '13px',
+    cursor: 'pointer',
+    fontWeight: '500',
   },
   topTablesGrid: {
     display: 'grid',
