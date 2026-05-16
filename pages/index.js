@@ -7,7 +7,10 @@ export default function Home() {
   const [activities, setActivities] = useState([]);
   const [stats, setStats] = useState(null);
   const [athlete, setAthlete] = useState(null);
+  const [gear, setGear] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMessage, setLoadingMessage] = useState('Fetching your runs...');
+  const [loadingProgress, setLoadingProgress] = useState(0);
   const [activeTab, setActiveTab] = useState('run');
   const [timeFilter, setTimeFilter] = useState('thisWeek');
   const [startDate, setStartDate] = useState('');
@@ -49,16 +52,38 @@ export default function Home() {
 
   const fetchData = async () => {
     try {
+      // Simulate loading progress
+      setLoadingProgress(20);
+      setLoadingMessage('Fetching your runs...');
+      
       const [activitiesRes, statsRes, athleteRes] = await Promise.all([
         axios.get('/api/strava/activities'),
         axios.get('/api/strava/stats'),
         axios.get('/api/strava/athlete')
       ]);
       
+      setLoadingProgress(60);
+      setLoadingMessage('Calculating stats...');
+      
       setActivities(activitiesRes.data);
       setStats(statsRes.data);
       setAthlete(athleteRes.data);
-      setLoading(false);
+      
+      // Fetch gear data
+      try {
+        const gearRes = await axios.get('/api/strava/gear');
+        setGear(gearRes.data);
+      } catch (error) {
+        console.error('Failed to fetch gear:', error);
+        setGear([]);
+      }
+      
+      setLoadingProgress(100);
+      setLoadingMessage('Almost there...');
+      
+      setTimeout(() => {
+        setLoading(false);
+      }, 500);
     } catch (error) {
       console.error('Failed to fetch data:', error);
       setLoading(false);
@@ -140,13 +165,32 @@ export default function Home() {
     });
   };
 
+  // Get gear stats
+  const getGearStats = (gearId) => {
+    const gearActivities = activities.filter(a => a.gear_id === gearId && a.type === 'Run');
+    const totalDistance = gearActivities.reduce((sum, a) => sum + a.distance, 0) / 1000;
+    const uses = gearActivities.length;
+    const avgDistance = uses > 0 ? totalDistance / uses : 0;
+    
+    // Calculate average pace
+    const validActivities = gearActivities.filter(a => a.distance > 0 && a.moving_time > 0);
+    let avgPace = '0:00';
+    if (validActivities.length > 0) {
+      const avgPaceMin = validActivities.reduce((sum, a) => {
+        return sum + (a.moving_time / 60) / (a.distance / 1000);
+      }, 0) / validActivities.length;
+      const min = Math.floor(avgPaceMin);
+      const sec = Math.floor((avgPaceMin - min) * 60);
+      avgPace = `${min}:${sec.toString().padStart(2, '0')}`;
+    }
+    
+    return { uses, avgDistance, avgPace };
+  };
+
   // Initialize charts after component mounts
   useEffect(() => {
     if (chartsInitialized && activeTab === 'run' && activities.length > 0) {
       setTimeout(() => initializeRunCharts(), 100);
-    }
-    if (chartsInitialized && activeTab === 'gear' && activities.length > 0) {
-      setTimeout(() => initializeGearCharts(), 100);
     }
   }, [chartsInitialized, activeTab, activities, monthlyChartYear, distChartYear, paceChartYear]);
 
@@ -356,58 +400,6 @@ export default function Home() {
     }
   };
 
-  const initializeGearCharts = () => {
-    if (typeof window === 'undefined' || !window.Chart) return;
-
-    const shoeCanvas = document.getElementById('shoeDistanceChart');
-    if (shoeCanvas) {
-      const shoeCtx = shoeCanvas.getContext('2d');
-      if (window.shoeChartInstance) window.shoeChartInstance.destroy();
-
-      // Sample data for shoe distance over time
-      const months = [];
-      const startDate = new Date();
-      startDate.setMonth(startDate.getMonth() - 12);
-      
-      for (let i = 0; i < 13; i++) {
-        const date = new Date(startDate);
-        date.setMonth(startDate.getMonth() + i);
-        months.push(date.toLocaleDateString('en-US', { month: 'short', year: '2-digit' }));
-      }
-
-      window.shoeChartInstance = new window.Chart(shoeCtx, {
-        type: 'line',
-        data: {
-          labels: months,
-          datasets: [
-            {
-              label: 'Total Distance',
-              data: months.map((_, i) => (i + 1) * 50),
-              borderColor: '#FC4C02',
-              backgroundColor: 'rgba(252, 76, 2, 0.1)',
-              borderWidth: 3,
-              tension: 0.3,
-              fill: true
-            }
-          ]
-        },
-        options: {
-          responsive: true,
-          maintainAspectRatio: true,
-          plugins: {
-            legend: { display: true }
-          },
-          scales: {
-            y: {
-              beginAtZero: true,
-              title: { display: true, text: 'Distance (km)' }
-            }
-          }
-        }
-      });
-    }
-  };
-
   // Generate consistency grid data based on PACE in Mon-Sun week format
   const generateConsistencyGrid = () => {
     const filteredActs = getFilteredActivities();
@@ -490,7 +482,17 @@ export default function Home() {
   if (loading) {
     return (
       <div style={styles.loadingContainer}>
-        <div>Loading your running data...</div>
+        <Head>
+          <title>Loading - Strava Dashboard</title>
+        </Head>
+        <div style={styles.loadingCard}>
+          <div style={styles.runnerIcon}>🏃‍♂️</div>
+          <h2 style={styles.loadingTitle}>{loadingMessage}</h2>
+          <div style={styles.progressBarContainer}>
+            <div style={{...styles.progressBarFill, width: `${loadingProgress}%`}}></div>
+          </div>
+          <div style={styles.loadingSubtext}>{loadingProgress}%</div>
+        </div>
       </div>
     );
   }
@@ -529,7 +531,7 @@ export default function Home() {
       </Head>
       
       <div style={styles.dashboard}>
-        {/* Tabs */}
+        {/* Tabs - Reordered: Run, Race, Activities, Calendar, Gear */}
         <div style={styles.tabs}>
           <button 
             style={activeTab === 'run' ? {...styles.tabBtn, ...styles.tabBtnActive} : styles.tabBtn}
@@ -538,16 +540,10 @@ export default function Home() {
             🏃 Run
           </button>
           <button 
-            style={activeTab === 'gear' ? {...styles.tabBtn, ...styles.tabBtnActive} : styles.tabBtn}
-            onClick={() => setActiveTab('gear')}
+            style={activeTab === 'races' ? {...styles.tabBtn, ...styles.tabBtnActive} : styles.tabBtn}
+            onClick={() => setActiveTab('races')}
           >
-            👟 Gear
-          </button>
-          <button 
-            style={activeTab === 'calendar' ? {...styles.tabBtn, ...styles.tabBtnActive} : styles.tabBtn}
-            onClick={() => setActiveTab('calendar')}
-          >
-            📅 Calendar
+            🏆 Races
           </button>
           <button 
             style={activeTab === 'activities' ? {...styles.tabBtn, ...styles.tabBtnActive} : styles.tabBtn}
@@ -556,80 +552,90 @@ export default function Home() {
             📊 Activities
           </button>
           <button 
-            style={activeTab === 'races' ? {...styles.tabBtn, ...styles.tabBtnActive} : styles.tabBtn}
-            onClick={() => setActiveTab('races')}
+            style={activeTab === 'calendar' ? {...styles.tabBtn, ...styles.tabBtnActive} : styles.tabBtn}
+            onClick={() => setActiveTab('calendar')}
           >
-            🏆 Races
+            📅 Calendar
+          </button>
+          <button 
+            style={activeTab === 'gear' ? {...styles.tabBtn, ...styles.tabBtnActive} : styles.tabBtn}
+            onClick={() => setActiveTab('gear')}
+          >
+            👟 Gear
           </button>
         </div>
 
-        {/* Filter Buttons */}
-        <div style={styles.filters}>
-          <button 
-            style={timeFilter === 'thisWeek' ? {...styles.filterBtn, ...styles.filterBtnActive} : styles.filterBtn}
-            onClick={() => setTimeFilter('thisWeek')}
-          >
-            This Week
-          </button>
-          <button 
-            style={timeFilter === 'last7Days' ? {...styles.filterBtn, ...styles.filterBtnActive} : styles.filterBtn}
-            onClick={() => setTimeFilter('last7Days')}
-          >
-            Last 7 Days
-          </button>
-          <button 
-            style={timeFilter === 'thisMonth' ? {...styles.filterBtn, ...styles.filterBtnActive} : styles.filterBtn}
-            onClick={() => setTimeFilter('thisMonth')}
-          >
-            This Month
-          </button>
-          <button 
-            style={timeFilter === 'last30Days' ? {...styles.filterBtn, ...styles.filterBtnActive} : styles.filterBtn}
-            onClick={() => setTimeFilter('last30Days')}
-          >
-            Last 30 Days
-          </button>
-          <button 
-            style={timeFilter === 'last3Months' ? {...styles.filterBtn, ...styles.filterBtnActive} : styles.filterBtn}
-            onClick={() => setTimeFilter('last3Months')}
-          >
-            Last 3 Months
-          </button>
-          <button 
-            style={timeFilter === 'last6Months' ? {...styles.filterBtn, ...styles.filterBtnActive} : styles.filterBtn}
-            onClick={() => setTimeFilter('last6Months')}
-          >
-            Last 6 Months
-          </button>
-          <button 
-            style={timeFilter === 'thisYear' ? {...styles.filterBtn, ...styles.filterBtnActive} : styles.filterBtn}
-            onClick={() => setTimeFilter('thisYear')}
-          >
-            This Year
-          </button>
-          <button 
-            style={timeFilter === 'allTime' ? {...styles.filterBtn, ...styles.filterBtnActive} : styles.filterBtn}
-            onClick={() => setTimeFilter('allTime')}
-          >
-            All Time
-          </button>
-          <input 
-            type="date" 
-            style={styles.dateInput}
-            value={startDate}
-            onChange={(e) => setStartDate(e.target.value)}
-            placeholder="Start Date"
-          />
-          <input 
-            type="date" 
-            style={styles.dateInput}
-            value={endDate}
-            onChange={(e) => setEndDate(e.target.value)}
-            placeholder="End Date"
-          />
-        </div>
+        {/* Filter Buttons - Hidden for Gear tab */}
+        {activeTab !== 'gear' && (
+          <>
+            <div style={styles.filters}>
+              <button 
+                style={timeFilter === 'thisWeek' ? {...styles.filterBtn, ...styles.filterBtnActive} : styles.filterBtn}
+                onClick={() => setTimeFilter('thisWeek')}
+              >
+                This Week
+              </button>
+              <button 
+                style={timeFilter === 'last7Days' ? {...styles.filterBtn, ...styles.filterBtnActive} : styles.filterBtn}
+                onClick={() => setTimeFilter('last7Days')}
+              >
+                Last 7 Days
+              </button>
+              <button 
+                style={timeFilter === 'thisMonth' ? {...styles.filterBtn, ...styles.filterBtnActive} : styles.filterBtn}
+                onClick={() => setTimeFilter('thisMonth')}
+              >
+                This Month
+              </button>
+              <button 
+                style={timeFilter === 'last30Days' ? {...styles.filterBtn, ...styles.filterBtnActive} : styles.filterBtn}
+                onClick={() => setTimeFilter('last30Days')}
+              >
+                Last 30 Days
+              </button>
+              <button 
+                style={timeFilter === 'last3Months' ? {...styles.filterBtn, ...styles.filterBtnActive} : styles.filterBtn}
+                onClick={() => setTimeFilter('last3Months')}
+              >
+                Last 3 Months
+              </button>
+              <button 
+                style={timeFilter === 'last6Months' ? {...styles.filterBtn, ...styles.filterBtnActive} : styles.filterBtn}
+                onClick={() => setTimeFilter('last6Months')}
+              >
+                Last 6 Months
+              </button>
+              <button 
+                style={timeFilter === 'thisYear' ? {...styles.filterBtn, ...styles.filterBtnActive} : styles.filterBtn}
+                onClick={() => setTimeFilter('thisYear')}
+              >
+                This Year
+              </button>
+              <button 
+                style={timeFilter === 'allTime' ? {...styles.filterBtn, ...styles.filterBtnActive} : styles.filterBtn}
+                onClick={() => setTimeFilter('allTime')}
+              >
+                All Time
+              </button>
+              <input 
+                type="date" 
+                style={styles.dateInput}
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+                placeholder="Start Date"
+              />
+              <input 
+                type="date" 
+                style={styles.dateInput}
+                value={endDate}
+                onChange={(e) => setEndDate(e.target.value)}
+                placeholder="End Date"
+              />
+            </div>
 
-        <button style={styles.applyBtn} onClick={applyCustomDateFilter}>Apply</button>
+            <button style={styles.applyBtn} onClick={applyCustomDateFilter}>Apply</button>
+          </>
+        )}
 
         {/* RUN TAB */}
         {activeTab === 'run' && (
@@ -959,69 +965,74 @@ export default function Home() {
           </div>
         )}
 
-        {/* GEAR TAB */}
+        {/* GEAR TAB - Real Shoe Data from Strava */}
         {activeTab === 'gear' && (
           <div>
-            <h2 style={styles.sectionTitle}>👟 Your Gear</h2>
+            <h2 style={styles.sectionTitle}>👟 Your Active Running Shoes</h2>
             
-            <div style={styles.shoeGrid}>
-              <div style={{...styles.shoeCard, ...styles.shoeCardActive}}>
-                <div style={styles.shoeHeader}>
-                  <div style={styles.shoeIcon}>👟</div>
-                  <div>
-                    <h3 style={styles.shoeName}>Current Shoes</h3>
-                    <div style={styles.shoeType}>Road Running</div>
-                  </div>
-                </div>
-                <div style={styles.distanceBig}>
-                  {totalDistance} <span style={styles.distanceUnit}>km</span>
-                </div>
-                <div style={styles.progressBar}>
-                  <div style={{...styles.progressFill, width: `${Math.min((totalDistance / 700) * 100, 100)}%`}}></div>
-                </div>
-                <div style={styles.progressLabel}>{Math.min(Math.round((totalDistance / 700) * 100), 100)}% of 700 km lifespan</div>
-                <div style={styles.statsGrid}>
-                  <div style={styles.statItem}>
-                    <span style={styles.statIcon}>🏃</span>
-                    <div>
-                      <div style={styles.statValue}>{totalRuns}</div>
-                      <span style={styles.statLabel}>Uses</span>
-                    </div>
-                  </div>
-                  <div style={styles.statItem}>
-                    <span style={styles.statIcon}>📏</span>
-                    <div>
-                      <div style={styles.statValue}>{totalRuns > 0 ? (totalDistance / totalRuns).toFixed(2) : 0} km</div>
-                      <span style={styles.statLabel}>Avg Dist</span>
-                    </div>
-                  </div>
-                  <div style={styles.statItem}>
-                    <span style={styles.statIcon}>⛰️</span>
-                    <div>
-                      <div style={styles.statValue}>{totalRuns > 0 ? Math.round(totalElevation / totalRuns) : 0}m</div>
-                      <span style={styles.statLabel}>Avg Elev</span>
-                    </div>
-                  </div>
-                  <div style={styles.statItem}>
-                    <span style={styles.statIcon}>⚡</span>
-                    <div>
-                      <div style={styles.statValue}>{avgPace}</div>
-                      <span style={styles.statLabel}>Avg Pace</span>
-                    </div>
-                  </div>
-                </div>
-                {totalDistance > 700 && (
-                  <div style={styles.replacementBanner}>
-                    <span style={styles.replacementText}>⚠️ Replacement Recommended!</span>
-                  </div>
-                )}
+            {gear.length === 0 ? (
+              <div style={{textAlign: 'center', padding: '60px 20px'}}>
+                <p style={{color: '#6D6D78'}}>No active shoes found. Add your shoes in Strava!</p>
               </div>
-            </div>
-
-            <div style={styles.chartCard}>
-              <h3 style={styles.chartTitle}>Distance Over Time</h3>
-              <canvas id="shoeDistanceChart"></canvas>
-            </div>
+            ) : (
+              <div style={styles.shoeGrid}>
+                {gear.map((shoe) => {
+                  const shoeDistance = (shoe.distance / 1000).toFixed(0);
+                  const stats = getGearStats(shoe.id);
+                  
+                  return (
+                    <div key={shoe.id} style={{...styles.shoeCard, ...(shoe.primary && styles.shoeCardActive)}}>
+                      <div style={styles.shoeHeader}>
+                        <div style={styles.shoeIcon}>👟</div>
+                        <div style={{flex: 1}}>
+                          <h3 style={styles.shoeName}>{shoe.name || 'Running Shoe'}</h3>
+                          {shoe.brand_name && shoe.model_name && (
+                            <div style={styles.shoeModel}>{shoe.brand_name} {shoe.model_name}</div>
+                          )}
+                        </div>
+                      </div>
+                      <div style={styles.distanceBig}>
+                        {shoeDistance} <span style={styles.distanceUnit}>km</span>
+                      </div>
+                      <div style={styles.progressBar}>
+                        <div style={{...styles.progressFill, width: `${Math.min((shoeDistance / 700) * 100, 100)}%`}}></div>
+                      </div>
+                      <div style={styles.progressLabel}>
+                        {Math.min(Math.round((shoeDistance / 700) * 100), 100)}% of 700 km lifespan
+                      </div>
+                      <div style={styles.statsGrid}>
+                        <div style={styles.statItem}>
+                          <span style={styles.statIcon}>🏃</span>
+                          <div>
+                            <div style={styles.statValue}>{stats.uses}</div>
+                            <span style={styles.statLabel}>Uses</span>
+                          </div>
+                        </div>
+                        <div style={styles.statItem}>
+                          <span style={styles.statIcon}>📏</span>
+                          <div>
+                            <div style={styles.statValue}>{stats.avgDistance.toFixed(1)} km</div>
+                            <span style={styles.statLabel}>Avg Dist</span>
+                          </div>
+                        </div>
+                        <div style={styles.statItem}>
+                          <span style={styles.statIcon}>⚡</span>
+                          <div>
+                            <div style={styles.statValue}>{stats.avgPace} /km</div>
+                            <span style={styles.statLabel}>Avg Pace</span>
+                          </div>
+                        </div>
+                      </div>
+                      {shoeDistance > 700 && (
+                        <div style={styles.replacementBanner}>
+                          <span style={styles.replacementText}>⚠️ Replacement Recommended!</span>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         )}
 
@@ -1201,7 +1212,46 @@ const styles = {
     justifyContent: 'center',
     alignItems: 'center',
     height: '100vh',
-    fontFamily: 'Arial',
+    background: '#F7F8FA',
+  },
+  loadingCard: {
+    background: 'white',
+    padding: '48px',
+    borderRadius: '16px',
+    boxShadow: '0 4px 20px rgba(0,0,0,0.1)',
+    textAlign: 'center',
+    maxWidth: '400px',
+    width: '90%',
+  },
+  runnerIcon: {
+    fontSize: '64px',
+    marginBottom: '24px',
+    animation: 'bounce 1s infinite',
+  },
+  loadingTitle: {
+    color: '#FC4C02',
+    fontSize: '20px',
+    fontWeight: '600',
+    marginBottom: '24px',
+  },
+  progressBarContainer: {
+    width: '100%',
+    height: '8px',
+    background: '#E5E5E5',
+    borderRadius: '4px',
+    overflow: 'hidden',
+    marginBottom: '12px',
+  },
+  progressBarFill: {
+    height: '100%',
+    background: 'linear-gradient(90deg, #FC4C02, #FF8547)',
+    borderRadius: '4px',
+    transition: 'width 0.3s ease',
+  },
+  loadingSubtext: {
+    color: '#6D6D78',
+    fontSize: '14px',
+    fontWeight: '500',
   },
   loginContainer: {
     display: 'flex',
@@ -1572,12 +1622,10 @@ const styles = {
     color: '#242428',
     margin: 0,
   },
-  shoeType: {
+  shoeModel: {
     fontSize: '12px',
-    fontWeight: '600',
-    color: '#FF8C00',
-    textTransform: 'uppercase',
-    letterSpacing: '0.5px',
+    color: '#6D6D78',
+    marginTop: '4px',
   },
   distanceBig: {
     fontSize: '48px',
@@ -1613,7 +1661,7 @@ const styles = {
   },
   statsGrid: {
     display: 'grid',
-    gridTemplateColumns: 'repeat(2, 1fr)',
+    gridTemplateColumns: 'repeat(3, 1fr)',
     gap: '16px',
     marginTop: '16px',
   },
