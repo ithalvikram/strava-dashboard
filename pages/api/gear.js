@@ -9,27 +9,35 @@ export default async function handler(req, res) {
   }
 
   try {
-    // First, get the athlete data which contains gear IDs
-    const athleteResponse = await axios.get('https://www.strava.com/api/v3/athlete', {
+    // Get all activities to extract gear IDs
+    const activitiesResponse = await axios.get('https://www.strava.com/api/v3/athlete/activities', {
       headers: {
         'Authorization': `Bearer ${accessToken}`
+      },
+      params: {
+        per_page: 200,
+        page: 1
       }
     });
 
-    const athlete = athleteResponse.data;
-    const gearIds = [];
+    const activities = activitiesResponse.data;
+    const gearIds = new Set();
 
-    // Collect all unique gear IDs from shoes
-    if (athlete.shoes) {
-      athlete.shoes.forEach(shoe => {
-        if (shoe.id && !gearIds.includes(shoe.id)) {
-          gearIds.push(shoe.id);
-        }
-      });
+    // Collect all unique gear IDs from activities
+    activities.forEach(activity => {
+      if (activity.gear_id) {
+        gearIds.add(activity.gear_id);
+      }
+    });
+
+    console.log('Found gear IDs:', Array.from(gearIds));
+
+    if (gearIds.size === 0) {
+      return res.status(200).json([]);
     }
 
     // Fetch detailed information for each gear item
-    const gearPromises = gearIds.map(id => 
+    const gearPromises = Array.from(gearIds).map(id => 
       axios.get(`https://www.strava.com/api/v3/gear/${id}`, {
         headers: {
           'Authorization': `Bearer ${accessToken}`
@@ -46,9 +54,10 @@ export default async function handler(req, res) {
       .map(response => response.data)
       .filter(gear => !gear.retired); // Only return active (non-retired) gear
 
+    console.log('Returning gear data:', gearData.length, 'items');
     res.status(200).json(gearData);
   } catch (error) {
     console.error('Failed to fetch gear:', error.response?.data || error.message);
-    res.status(500).json({ error: 'Failed to fetch gear' });
+    res.status(500).json({ error: 'Failed to fetch gear', details: error.message });
   }
 }
